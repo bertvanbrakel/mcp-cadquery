@@ -1,1 +1,4 @@
 cadquery==2.5.2
+fastapi
+uvicorn[standard]
+sse-starlette

@@ -28,6 +28,7 @@ echo "Installing dependencies from requirements.txt..."
 uv pip install -r requirements.txt --python $VENV_DIR/bin/python
 echo "Dependencies installed."
 
-# Run the server
-echo "Starting MCP CadQuery server..."
-uv run --python $VENV_DIR/bin/python server.py
+# Run the FastAPI server using uvicorn
+echo "Starting MCP CadQuery FastAPI server with uvicorn..."
+# Use --reload for development to automatically restart on code changes
+uv run --python $VENV_DIR/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
