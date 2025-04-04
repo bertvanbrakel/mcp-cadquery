@@ -26,6 +26,14 @@
     *   [ ] Refactor `server.py` for FastAPI & SSE.
     *   [ ] Update `run_server.sh` to use `uvicorn`.
 5.  [ ] Test MCP Server (SSE).
+6.  [ ] Add Web UI (React):
+    *   [ ] Create `frontend` directory.
+    *   [ ] Initialize React project (Vite).
+    *   [ ] Configure FastAPI to serve static UI files.
+    *   [x] Update `run_server.sh` (now backend only).
+    *   [x] Create `run_dev.sh` for concurrent dev servers with flags (`--port`, `--verbose`).
+    *   [x] Develop basic UI components (`App.jsx`).
+7.  [ ] Test MCP Server with UI using `run_dev.sh`.
 
 **Relevant Info:**
 

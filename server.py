@@ -9,6 +9,8 @@ from typing import Dict, Any, List
 
 import cadquery as cq
 from fastapi import FastAPI, Request, HTTPException, Body
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 
 # --- Logging Setup ---
@@ -326,6 +328,32 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
         log.error(traceback.format_exc())
         raise Exception(error_msg) # Re-raise other exceptions
 
+# --- Static Files Hosting ---
+# Mount the static directory AFTER API routes to avoid conflicts
+# This assumes the React app is built into the 'frontend/dist' directory
+STATIC_DIR = "frontend/dist"
+
+# Check if the static directory exists before mounting
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve index.html for all non-API routes to enable client-side routing."""
+        index_path = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        else:
+            log.error(f"Frontend index.html not found at {index_path}")
+            raise HTTPException(status_code=404, detail="Frontend not found. Build the frontend first.")
+else:
+    log.warning(f"Static directory '{STATIC_DIR}' not found. Frontend will not be served.")
+    log.warning("Run 'npm install && npm run build' in the 'frontend' directory.")
+
+    @app.get("/")
+    async def root_fallback():
+        return {"message": "Backend is running, but frontend is not built or found."}
+
 
 # Note: The old main() function and stdin loop are removed.
 # Uvicorn will run the FastAPI app instance 'app'.
@@ -335,4 +363,5 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
 # Example for direct run (though run_server.sh is preferred)
 # if __name__ == "__main__":
 #     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)
 #     uvicorn.run(app, host="0.0.0.0", port=8000)
