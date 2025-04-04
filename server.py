@@ -275,7 +275,16 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
         args = request.get("arguments", {})
         result_id = args.get("result_id")
         shape_index = args.get("shape_index", 0) # Default to the first shape
-        filename = args.get("filename")
+        # Ensure filename is just the name, not a path
+        base_filename = os.path.basename(args.get("filename", f"render_{uuid.uuid4()}.png"))
+        if not base_filename.lower().endswith(".png"):
+             raise ValueError("'filename' must end with .png")
+
+        # Construct full path within the render directory
+        output_path = os.path.join(RENDER_DIR_PATH, base_filename)
+        # Construct the URL path for the client
+        output_url = f"/{RENDER_DIR_NAME}/{base_filename}"
+
         render_options = args.get("options", {}) # Optional dict for vis.show opts
 
         # --- Input Validation ---
@@ -283,8 +292,7 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
             raise ValueError("Missing 'result_id' argument.")
         if not filename:
             raise ValueError("Missing 'filename' argument.")
-        if not filename.lower().endswith(".png"):
-             raise ValueError("'filename' must end with .png")
+        # Validation for base_filename happens above
         if not isinstance(shape_index, int) or shape_index < 0:
              raise ValueError("'shape_index' must be a non-negative integer.")
         if not isinstance(render_options, dict):
@@ -304,22 +312,22 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
 
         # --- Render ---
         # Ensure interact is False and screenshot is set
-        render_options['screenshot'] = filename
+        render_options['screenshot'] = output_path # Save to the full path
         render_options['interact'] = False
-        log.info(f"Attempting to render shape to '{filename}' (Options: {render_options})")
+        log.info(f"Attempting to render shape to '{output_path}' (URL: {output_url}, Options: {render_options})")
 
         # vis.show might block or have issues in a non-GUI server environment.
         # Need to be cautious here. Consider running in a separate process if it blocks.
         # For now, assume it works as documented for non-interactive screenshots.
         cq.vis.show(shape_to_render, **render_options)
 
-        log.info(f"Shape successfully rendered to '{filename}'.")
+        log.info(f"Shape successfully rendered to '{output_path}'.")
 
         # Return success result data
         return {
             "success": True,
-            "message": f"Shape successfully rendered to {filename}.",
-            "filename": filename
+            "message": f"Shape successfully rendered to {output_url}.",
+            "filename": output_url # Return the URL path
         }
 
     except Exception as e:
@@ -328,27 +336,48 @@ def handle_render_shape_to_png(request) -> dict: # Returns result dict or raises
         log.error(traceback.format_exc())
         raise Exception(error_msg) # Re-raise other exceptions
 
-# --- Static Files Hosting ---
+# --- Static Files & Render Output Hosting ---
+RENDER_DIR_NAME = "renders"
+STATIC_DIR = "frontend/dist"
+RENDER_DIR_PATH = os.path.join(STATIC_DIR, RENDER_DIR_NAME)
+
+# Ensure render directory exists
+os.makedirs(RENDER_DIR_PATH, exist_ok=True)
+log.info(f"Ensured render directory exists: {RENDER_DIR_PATH}")
+
 # Mount the static directory AFTER API routes to avoid conflicts
 # This assumes the React app is built into the 'frontend/dist' directory
-STATIC_DIR = "frontend/dist"
+# Mount the renders directory specifically
+app.mount(f"/{RENDER_DIR_NAME}", StaticFiles(directory=RENDER_DIR_PATH), name=RENDER_DIR_NAME)
 
 # Check if the static directory exists before mounting
+# Mount the main static assets (like JS/CSS) from the build output
 if os.path.isdir(STATIC_DIR):
+    # Serve specific assets like JS/CSS bundles
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+    # Serve other static files like vite.svg etc. from the root of STATIC_DIR
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static_root") # Avoid clash with root catch-all
 
     @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        """Serve index.html for all non-API routes to enable client-side routing."""
+    async def serve_frontend_catch_all(request: Request, full_path: str):
+        """Serve index.html for all non-API, non-static file routes."""
+        # Check if the path looks like a file request that wasn't caught by StaticFiles
+        # This is a basic check, might need refinement
+        if "." in full_path.split("/")[-1] and not full_path.startswith("mcp"):
+             # It looks like a file but wasn't found by StaticFiles mounts
+             log.warning(f"Potential static file not found: {full_path}")
+             raise HTTPException(status_code=404, detail=f"Static file not found: {full_path}")
+
+        # Otherwise, assume it's a client-side route and serve index.html
         index_path = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
         else:
             log.error(f"Frontend index.html not found at {index_path}")
-            raise HTTPException(status_code=404, detail="Frontend not found. Build the frontend first.")
+            raise HTTPException(status_code=503, detail="Frontend not built or index.html missing.")
 else:
-    log.warning(f"Static directory '{STATIC_DIR}' not found. Frontend will not be served.")
-    log.warning("Run 'npm install && npm run build' in the 'frontend' directory.")
+    log.warning(f"Static directory '{STATIC_DIR}' not found. Frontend UI will not be served.")
+    log.warning("Run 'npm install && npm run build' in the 'frontend' directory, or use run_dev.sh.")
 
     @app.get("/")
     async def root_fallback():
