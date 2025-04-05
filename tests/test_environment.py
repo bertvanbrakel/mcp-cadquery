@@ -5,43 +5,10 @@ import pytest
 
 VENV_DIR = ".venv-cadquery"
 PYTHON_EXE = os.path.join(VENV_DIR, "bin", "python") # Adjust for Windows if needed
-SETUP_SCRIPT = "./setup_env.py" # Use the python script
+# SETUP_SCRIPT = "./setup_env.py" # No longer needed, server.py handles setup
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_environment():
-    """Fixture to ensure the virtual environment and dependencies are set up."""
-    print(f"\nSetting up test environment using {SETUP_SCRIPT}...")
-    try:
-        # Use sys.executable to ensure we use the same python running pytest
-        # to execute the setup script.
-        setup_command = [sys.executable, SETUP_SCRIPT]
-        print(f"Running setup command: {' '.join(setup_command)}")
-        process = subprocess.run(
-            setup_command,
-            capture_output=True,
-            text=True,
-            timeout=300, # Increased timeout for potential downloads/compilation
-            check=True # Expect setup script to succeed (exit code 0)
-        )
-        print("Setup script stdout:")
-        print(process.stdout)
-        if process.stderr:
-             print("Setup script stderr:")
-             print(process.stderr)
-        # We primarily care that the venv and python exe exist now
-        assert os.path.isdir(VENV_DIR), f"Virtual environment directory '{VENV_DIR}' not found after setup."
-        assert os.path.isfile(PYTHON_EXE), f"Python executable '{PYTHON_EXE}' not found after setup."
-        print("Test environment setup seems complete.")
-    except subprocess.TimeoutExpired:
-        pytest.fail("Setup script timed out.")
-    except subprocess.CalledProcessError as e:
-         print("Setup script stdout:")
-         print(e.stdout)
-         print("Setup script stderr:")
-         print(e.stderr)
-         pytest.fail(f"Setup script failed with exit code {e.returncode}")
-    except Exception as e:
-        pytest.fail(f"Setup script failed with unexpected error: {e}")
+# Note: Environment setup is now handled automatically by server.py when imported/run
+# outside the venv. This test primarily verifies the outcome.
 
 def test_cadquery_import():
     """Test if cadquery can be imported within the virtual environment."""

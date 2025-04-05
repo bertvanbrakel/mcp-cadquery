@@ -5,7 +5,7 @@
 **Purpose:** Expose CadQuery functionality via MCP tools for script execution, shape export, and part library management.
 
 **Key Files/Dirs:**
-*   `server_stdio.py`: Main FastAPI application, MCP handlers, core logic, stdio mode.
+*   `server.py`: Main FastAPI application, MCP handlers, core logic, stdio/sse modes via `--mode` flag. **Handles automatic venv setup/re-execution.**
 *   `part_library/`: Directory containing CadQuery part scripts (`.py`).
     *   Metadata: Module-level docstring (Key: Value format, `Tags:` comma-separated).
     *   Requirement: Scripts MUST use `show_object()` for the result to be indexed/previewed.
@@ -22,13 +22,13 @@
 *   `README.md`: Human-readable README.
 *   `context.llm.md`: Current task context and progress tracking.
 *   `run_tests.py`: Script to run pytest in the venv.
-*   `server_sse.py`: Convenience script to start HTTP SSE server.
+*   (Removed `server_sse.py`)
 
-**Key State Variables (in `server_stdio.py`):**
+**Key State Variables (in `server.py`):**
 *   `shape_results: Dict[str, cqgi.BuildResult]`: Stores results from `execute_cadquery_script`. Key is a UUID.
 *   `part_index: Dict[str, Dict[str, Any]]`: In-memory index for the part library. Key is `part_name` (filename without extension). Value contains `metadata`, `preview_url`, `script_path`, `mtime`.
 
-**Key Functions/Handlers (in `server_stdio.py`):**
+**Key Functions/Handlers (in `server.py`):**
 *   `execute_cqgi_script(script_content)`: Core logic for running CQGI script.
 *   `export_shape_to_file(shape, output_path, format, opts)`: Core logic for generic shape export.
 *   `export_shape_to_svg_file(shape, output_path, opts)`: Core logic for SVG export (uses `export_shape_to_file`).

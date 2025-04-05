@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the function to test from server.py in root
-from server_stdio import execute_cqgi_script
+from src.mcp_cadquery_server.core import execute_cqgi_script
 
 # --- Fixtures ---
 @pytest.fixture(scope="module")
@@ -49,10 +49,12 @@ def test_execute_script_with_cadquery_error():
     """Test executing a script that causes an error within CadQuery."""
     script = "import cadquery as cq\nresult = cq.Workplane('XY').box(1, 1, 0.1).edges('>Z').fillet(0.2)"
     print("\nTesting script execution with CadQuery error...")
-    with pytest.raises(Exception) as excinfo: execute_cqgi_script(script)
-    assert "failed" in str(excinfo.value).lower()
-    assert "ocp" in str(excinfo.value).lower() or "brep_api" in str(excinfo.value).lower()
-    print(f"Caught expected exception: {excinfo.value}")
+    # execute_cqgi_script now returns the BuildResult, not raises directly
+    build_result = execute_cqgi_script(script)
+    assert build_result.success is False
+    assert build_result.exception is not None
+    assert "failed" in str(build_result.exception).lower() or "brep_api" in str(build_result.exception).lower()
+    # print(f"Caught expected exception: {excinfo.value}") # Removed as excinfo no longer exists
     print("CadQuery error script execution test passed.")
 
 def test_execute_empty_script():

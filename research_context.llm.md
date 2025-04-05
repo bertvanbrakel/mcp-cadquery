@@ -1,48 +1,40 @@
-# CadQuery Research Context
+# Research: Configure RooCode SSE MCP Server (2025-06-04 01:21)
 
-**Source:** [CadQuery Docs Index](https://cadquery.readthedocs.io/en/latest/index.html) (Fetched 2025-05-04)
+**Search Query:** "RooCode configure SSE MCP server" (DuckDuckGo)
 
-**Key Findings:**
+**Results:**
 
-*   **Version:** Latest stable release is **2.5.2** (confirmed via PyPI). Documentation refers to "CadQuery 2". `master` branch is `2.6-dev`.
-*   **Installation (via `installation.html`):**
-    *   **Method:** `pip install cadquery` is supported and recommended within a virtual environment (compatible with `uv`).
-    *   **Python Version:** Requires Python 3.9+. Stable versions (e.g., 3.10, 3.11) recommended due to complex dependencies.
-    *   **Dependencies:** Base pip install handles core dependencies. No need for `[ipython]` or `[dev]` extras for the server. `uv` will manage these.
-    *   **Testing:** `import cadquery; cadquery.Workplane(...).toSvg()` confirms basic install and SVG export.
-*   **API (from `apireference.html`):**
-    *   **Core Objects:** `Workplane` (fluent 3D), `Sketch` (2D + constraints), `Assembly` (parts + constraints), `Selector` (geometry querying).
-    *   **High-Level:** Direct `Workplane` methods for primitives (`box`, `sphere`), operations (`extrude`, `cut`, `revolve`, `loft`, `fillet`, `chamfer`).
-    *   **Lower-Level:**
-        *   `Workplane` 2D methods (`lineTo`, `hLine`, `spline`, `threePointArc`).
-        *   `Sketch` API for constraint-based 2D.
-        *   Powerful `Selector` classes/strings for identifying faces, edges, vertices.
-        *   Methods to access geometry components (`vertices`, `edges`, `faces`).
-    *   **Import/Export:** `importers` (STEP, DXF), `exporters.export` (STEP, STL, SVG, AMF, 3MF, etc.).
-    *   **Assemblies:** Supported via `Assembly` object and constraints.
-*   **Validation/Rendering:**
-    *   `vis.html`: Describes visualization (`vis.show()`) including non-interactive PNG screenshot generation (`screenshot=...`, `interact=False`) with camera/size control. Useful for visual validation.
-    *   `importexport.html`: Details exporting via `exporters.export()` to STEP, STL, AMF, 3MF, SVG, DXF, TJS, VRML, VTP, glTF. Provides options for mesh quality (STL, etc.), appearance (SVG), assembly structure (STEP). Useful for validation (STEP analysis, SVG checks) and final output. Also covers STEP/DXF import.
-*   **Interfacing:**
-    *   `cqgi.html`: Describes CadQuery Gateway Interface (CQGI) for external execution - **Highly relevant for MCP server**.
-        *   **Mechanism:** `cqgi.parse(script)` -> `model.build(params)` -> `BuildResult`.
-        *   **Input:** Scripts define parameters via top-level assignments; server overrides via `build_parameters`.
-        *   **Output:** Scripts use `show_object(shape)` to return geometry; server accesses via `BuildResult.results`.
-        *   **Export:** Server can use `cadquery.exporters.export(shape, ...)` on results.
-        *   **Debugging:** Scripts can use `debug(obj)` for intermediate output.
-*   **Dependencies (from `master` branch `setup.py`, likely similar for 2.5.2):**
-    *   `cadquery-ocp>=7.8.1,<7.9` (Core OpenCASCADE wrapper)
-    *   `ezdxf>=1.3.0`
-    *   `multimethod>=1.11,<2.0`
-    *   `nlopt>=2.9.0,<3.0`
-    *   `typish`
-    *   `casadi`
-    *   `path`
-    *   Managed by `pip`/`uv` during `cadquery` installation. Core requirement is Python 3.9+.
-**Next Steps:**
+1.  **MCP Server Transports | Roo Code Docs**
+    *   URL: https://docs.roocode.com/features/mcp/server-transports/
+    *   Snippet: Share feedback about this site
+    *   *Summary:* Explains STDIO vs SSE transports. Points to the "Using MCP in Roo Code" guide for configuration details.
+2.  **Using MCP in Roo Code | Roo Code Docs**
+    *   URL: https://docs.roocode.com/features/mcp/using-mcp-in-roo/
+    *   Snippet: Share feedback about this site
+    *   *Summary:* Provides configuration details for both STDIO and SSE. SSE servers are configured in `mcp_settings.json` (global) or `.roo/mcp.json` (project) using a `url` field for the endpoint and optional `headers`.
+3.  **MCP Overview | Roo Code Docs**
+    *   URL: https://docs.roocode.com/features/mcp/overview/
+    *   Snippet: Share feedback about this site
+4.  **How to Use MCP Servers with Roo Code (within VSCode)**
+    *   URL: https://apidog.com/blog/mcp-server-roo-code/
+    *   Snippet: Share feedback about this site
+5.  **MCP servers not showing · Issue #2085 · RooVetGit/Roo-Code - GitHub**
+    *   URL: https://github.com/RooVetGit/Roo-Code/issues/2085
+    *   Snippet: Share feedback about this site
+6.  **Solved: Specify SSE Server in mcp.json - How To - Cursor**
+    *   URL: https://forum.cursor.com/t/solved-specify-sse-server-in-mcp-json/55616
+    *   Snippet: Share feedback about this site
+7.  **GitHub - sparfenyuk/mcp-proxy: Connect to MCP servers that run on SSE ...**
+    *   URL: https://github.com/sparfenyuk/mcp-proxy
+    *   Snippet: Share feedback about this site
+8.  **GitHub - sidharthrajaram/mcp-sse: A working pattern for SSE-based MCP ...**
+    *   URL: https://github.com/sidharthrajaram/mcp-sse
+    *   Snippet: Share feedback about this site
+9.  **Roo Code 3.9.0 Release Notes - MCP SSE Support and more! : RooCode**
+    *   URL: https://www.redditmedia.com/r/RooCode/comments/1jeqsgl/roo_code_390_release_notes_mcp_sse_support_and/
+    *   Snippet: Share feedback about this site
+10. **use_mcp_tool | Roo Code Docs**
+    *   URL: https://docs.roocode.com/features/tools/use-mcp-tool/
+    *   Snippet: Share feedback about this site
 
-1.  ~~Check `installation.html` for dependencies and specific install commands.~~ (Done)
-2.  ~~Check PyPI page (`https://pypi.org/project/cadquery/`) for latest version number confirmation and dependency overview.~~ (Done - Version 2.5.2 confirmed, dependencies found via `setup.py`)
-3.  ~~Investigate `cqgi.html` further.~~ (Done)
-4.  ~~Review `apireference.html` for API details.~~ (Done)
-5.  ~~Review `vis.html` and `importexport.html` for rendering/validation methods.~~ (Done)
+**Conclusion:** Found SSE configuration details in the RooCode documentation. Configuration involves adding an entry with a `url` and optional `headers` to either the global `mcp_settings.json` or project `.roo/mcp.json`.
