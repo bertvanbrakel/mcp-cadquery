@@ -3,35 +3,45 @@ import sys
 import os
 import pytest
 
-VENV_DIR = ".venv-cadquery" # Make sure this matches run_server.sh
+VENV_DIR = ".venv-cadquery"
 PYTHON_EXE = os.path.join(VENV_DIR, "bin", "python") # Adjust for Windows if needed
+SETUP_SCRIPT = "./setup_env.py" # Use the python script
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_environment():
     """Fixture to ensure the virtual environment and dependencies are set up."""
-    print("\nSetting up test environment using setup_env.sh...")
+    print(f"\nSetting up test environment using {SETUP_SCRIPT}...")
     try:
-        setup_command = ["bash", "./setup_env.sh"] # Use the dedicated setup script
+        # Use sys.executable to ensure we use the same python running pytest
+        # to execute the setup script.
+        setup_command = [sys.executable, SETUP_SCRIPT]
         print(f"Running setup command: {' '.join(setup_command)}")
         process = subprocess.run(
             setup_command,
             capture_output=True,
             text=True,
-            timeout=180, # Increased timeout for potential downloads
+            timeout=300, # Increased timeout for potential downloads/compilation
             check=True # Expect setup script to succeed (exit code 0)
         )
         print("Setup script stdout:")
         print(process.stdout)
-        print("Setup script stderr:")
-        print(process.stderr)
+        if process.stderr:
+             print("Setup script stderr:")
+             print(process.stderr)
         # We primarily care that the venv and python exe exist now
         assert os.path.isdir(VENV_DIR), f"Virtual environment directory '{VENV_DIR}' not found after setup."
         assert os.path.isfile(PYTHON_EXE), f"Python executable '{PYTHON_EXE}' not found after setup."
         print("Test environment setup seems complete.")
     except subprocess.TimeoutExpired:
         pytest.fail("Setup script timed out.")
+    except subprocess.CalledProcessError as e:
+         print("Setup script stdout:")
+         print(e.stdout)
+         print("Setup script stderr:")
+         print(e.stderr)
+         pytest.fail(f"Setup script failed with exit code {e.returncode}")
     except Exception as e:
-        pytest.fail(f"Setup script failed: {e}")
+        pytest.fail(f"Setup script failed with unexpected error: {e}")
 
 def test_cadquery_import():
     """Test if cadquery can be imported within the virtual environment."""
@@ -49,8 +59,9 @@ def test_cadquery_import():
             timeout=30
         )
         print(f"Import test stdout: {result.stdout.strip()}")
-        print(f"Import test stderr: {result.stderr.strip()}")
-        assert result.returncode == 0 # Check if import succeeded (implicit via check=True, explicit here for clarity)
+        if result.stderr:
+             print(f"Import test stderr: {result.stderr.strip()}")
+        assert result.returncode == 0 # Check if import succeeded
         print("cadquery imported successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Import test stdout: {e.stdout}")

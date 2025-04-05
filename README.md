@@ -2,16 +2,18 @@
 
 **TL;DR: Running as MCP Server**
 
-1.  **Prerequisites:** Ensure `python3` (3.10+), `bash`, and `uv` are installed.
+1.  **Prerequisites:** Ensure `python3` (3.10+) and `uv` are installed.
 2.  **Setup Environment (First time or after pulling changes):**
     ```bash
-    bash ./setup_env.sh
+    # Use python3 to run the setup script
+    python3 ./setup_env.py
+    # Or make it executable: chmod +x setup_env.py && ./setup_env.py
     ```
 3.  **Run the Server:** Choose **one** method:
     *   **HTTP SSE Mode (Recommended for Dev/Web UI):**
         ```bash
-        # Runs setup first, then starts server on port 8000 with reload
-        bash ./start_sse.sh
+        # Runs setup again (harmless) and starts server on port 8000 with reload
+        python3 ./start_sse.py
 
         # Or run manually with options after activating venv:
         # source .venv-cadquery/bin/activate
@@ -45,8 +47,8 @@ The server can run in two modes:
 ## Features
 
 *   **Command-Line Interface:** Uses `typer` for easy configuration (host, port, reload, directories, stdio mode).
-*   **Setup Script:** `setup_env.sh` creates a virtual environment and installs dependencies using `uv`.
-*   **Convenience Scripts:** `start_sse.sh` for easy HTTP server startup.
+*   **Setup Script:** `setup_env.py` (Python script) creates a virtual environment and installs dependencies using `uv`.
+*   **Convenience Scripts:** `start_sse.py` (Python) for easy HTTP server startup, `run_frontend_dev.py` (Python) for frontend dev server.
 *   **Execute CadQuery Scripts:** Run arbitrary CadQuery Python scripts via the `execute_cadquery_script` tool.
 *   **Export Shapes:** Export generated shapes (currently SVG via `export_shape_to_svg`).
 *   **Part Library:**
@@ -62,7 +64,6 @@ The server can run in two modes:
 ### Prerequisites
 
 *   Python 3.10+ (accessible as `python3`)
-*   `bash` (for setup/run scripts)
 *   `uv` (the Python package installer/virtual environment manager - see https://github.com/astral-sh/uv)
 *   `npm` (for optional frontend development)
 *   **CadQuery System Dependencies:** Installing CadQuery via pip/uv might require C++ build tools and other libraries depending on your OS. Refer to the official CadQuery documentation if installation fails.
@@ -76,9 +77,10 @@ The server can run in two modes:
     ```
 
 2.  **Set up the Python Environment:**
-    Run the setup script. This creates the `.venv-cadquery` virtual environment and installs dependencies from `requirements.txt`.
+    Run the Python setup script. This creates the `.venv-cadquery` virtual environment and installs dependencies from `requirements.txt`.
     ```bash
-    bash ./setup_env.sh
+    python3 ./setup_env.py
+    # Or make executable first: chmod +x setup_env.py && ./setup_env.py
     ```
 
 3.  **Run the Server:** Choose **one** mode:
@@ -87,9 +89,9 @@ The server can run in two modes:
         Use the convenience script:
         ```bash
         # Runs setup again (harmless) and starts server with reload
-        bash ./start_sse.sh
+        python3 ./start_sse.py
         # Pass arguments through:
-        # bash ./start_sse.sh --port 8080
+        # python3 ./start_sse.py --port 8080
         ```
         Or run manually after activating the environment:
         ```bash
@@ -97,7 +99,7 @@ The server can run in two modes:
         python server.py --port 8000 --reload
         # See all options: python server.py --help
         ```
-        Connect your MCP client using the HTTP SSE method (see TL;DR section).
+        Connect your MCP client using the HTTP SSE method (see MCP Configuration Examples below).
 
     *   **Stdio Mode:**
         Activate the environment first, then run `server.py` with the `--stdio` flag:
@@ -128,7 +130,7 @@ You can run multiple instances of the server, each configured differently (e.g.,
   ]
 }
 ```
-*Run command (in terminal):* `bash ./start_sse.sh`
+*Run command (in terminal):* `python3 ./start_sse.py`
 
 ### Example 2: Stdio Connection
 
@@ -143,7 +145,7 @@ You can run multiple instances of the server, each configured differently (e.g.,
   ]
 }
 ```
-*Run command:* Managed by the MCP client. Requires `bash ./setup_env.sh` to be run once manually first.
+*Run command:* Managed by the MCP client. Requires `python3 ./setup_env.py` to be run once manually first.
 
 ### Example 3: Multiple Projects (HTTP SSE)
 
@@ -165,7 +167,7 @@ You can run multiple instances of the server, each configured differently (e.g.,
   ]
 }
 ```
-*Run commands (in separate terminals after running `bash ./setup_env.sh` once):*
+*Run commands (in separate terminals after running `python3 ./setup_env.py` once):*
 ```bash
 source .venv-cadquery/bin/activate
 python server.py --port 8001 --library-dir /path/to/project/alpha/parts --static-dir /path/to/project/alpha/static
@@ -192,21 +194,21 @@ python server.py --port 8002 --library-dir /path/to/project/beta/cad_files --sta
   ]
 }
 ```
-*Run commands:* Managed by the MCP client. Requires `bash ./setup_env.sh` to be run once manually first.
+*Run commands:* Managed by the MCP client. Requires `python3 ./setup_env.py` to be run once manually first.
 
 ## Running the Frontend (Development Mode - HTTP Mode Only)
 
 If you want to actively develop the frontend with hot-reloading:
 
-1.  **Ensure environment is set up:** `bash ./setup_env.sh`
+1.  **Ensure environment is set up:** `python3 ./setup_env.py`
 2.  **Install frontend dependencies:** `cd frontend && npm install && cd ..`
-3.  **Start the backend server (in HTTP mode, separate terminal):** `bash ./start_sse.sh`
-4.  **Start the frontend development server (in another terminal):** `bash ./run_frontend_dev.sh`
+3.  **Start the backend server (in HTTP mode, separate terminal):** `python3 ./start_sse.py`
+4.  **Start the frontend development server (in another terminal):** `python3 ./run_frontend_dev.py`
     The frontend will typically be available at `http://localhost:5173`.
 
 ## Running Tests
 
-1.  **Ensure environment is set up:** `bash ./setup_env.sh`
+1.  **Ensure environment is set up:** `python3 ./setup_env.py`
 2.  **Activate the virtual environment:** `source .venv-cadquery/bin/activate`
 3.  **Run tests:** `pytest tests/`
 
@@ -214,7 +216,7 @@ If you want to actively develop the frontend with hot-reloading:
 
 ```
 .
-├── .venv-cadquery/     # Python virtual environment (created by setup_env.sh)
+├── .venv-cadquery/     # Python virtual environment (created by setup_env.py)
 ├── frontend/           # React/TypeScript frontend source
 │   ├── dist/           # Built frontend files (served by backend)
 │   └── ...
@@ -232,15 +234,15 @@ If you want to actively develop the frontend with hot-reloading:
 ├── .gitignore
 ├── context.llm.md      # AI working context (can be ignored)
 ├── pytest.ini          # Pytest configuration (registers markers)
-├── pyproject.toml      # Project metadata (NOT used for installation currently)
+├── pyproject.toml      # Project metadata (NOT used for installation)
 ├── README.md           # This file
 ├── README.llm.md       # Concise README for LLMs
-├── requirements.txt    # Python dependencies (used by setup_env.sh)
-├── run_dev.sh          # Convenience script (may combine server/frontend)
-├── run_frontend_dev.sh # Runs frontend dev server
+├── requirements.txt    # Python dependencies (used by setup_env.py)
+├── run_dev.py          # Prints instructions for running dev environment
+├── run_frontend_dev.py # Runs frontend dev server
 ├── server.py           # Main FastAPI backend application & CLI entrypoint
-├── setup_env.sh        # Environment setup script
-└── start_sse.sh        # Convenience script to run HTTP server
+├── setup_env.py        # Python environment setup script
+└── start_sse.py        # Convenience script to run HTTP server
 ```
 
 ## Contributing
