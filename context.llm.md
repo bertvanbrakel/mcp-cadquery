@@ -2,7 +2,7 @@
 
 **Objective:** Create a Python-based MCP server to control CadQuery.
 
-**Current Phase:** Planning & Implementation
+**Current Phase:** Implementation (UI Debugging Paused)
 
 **Tasks:**
 
@@ -33,7 +33,10 @@
     *   [x] Update `run_server.sh` (now backend only).
     *   [x] Create `run_dev.sh` for concurrent dev servers with flags (`--port`, `--verbose`).
     *   [x] Develop basic UI components (`App.jsx`).
-7.  [ ] Test MCP Server with UI using `run_dev.sh`.
+    *   [x] Refactor UI into components.
+    *   [x] Convert UI to TypeScript.
+    *   [x] Implement auto-render via SVG export.
+7.  [ ] Debug/Refine UI (Paused).
 
 **Relevant Info:**
 
