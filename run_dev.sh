@@ -48,16 +48,9 @@ if ! npx -v &> /dev/null; then
     echo "Warning: npx might not be installed or in PATH. Concurrently might fail."
     echo "Consider installing Node.js/npm which usually includes npx."
 fi
+# --- Assume Dependencies are installed via setup_env.sh ---
+echo "Assuming dependencies are installed. Run 'bash setup_env.sh' if needed."
 
-
-# --- Install Dependencies (if needed) ---
-echo "Ensuring backend dependencies from requirements.txt are installed..."
-uv pip install -r requirements.txt --python $VENV_DIR/bin/python
-echo "Backend dependencies checked/installed."
-
-echo "Ensuring frontend dependencies are installed..."
-(cd $FRONTEND_DIR && npm install)
-echo "Frontend dependencies checked/installed."
 
 
 # --- Run Concurrently ---

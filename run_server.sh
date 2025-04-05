@@ -23,10 +23,12 @@ else
     echo "Virtual environment $VENV_DIR already exists."
 fi
 
-# Install backend dependencies (if needed)
-echo "Ensuring backend dependencies from requirements.txt are installed..."
-uv pip install -r requirements.txt --python $VENV_DIR/bin/python
-echo "Backend dependencies checked/installed."
+# --- Prerequisite Check ---
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Error: Virtual environment $VENV_DIR not found."
+    echo "Please run 'bash setup_env.sh' first."
+    exit 1
+fi
 
 # --- Defaults ---
 PORT=8000
