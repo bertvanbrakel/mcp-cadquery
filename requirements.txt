@@ -3,3 +3,4 @@ fastapi
 uvicorn[standard]
 sse-starlette
 pytest
+typer[all] # Added typer for CLI

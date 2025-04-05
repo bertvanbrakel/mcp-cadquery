@@ -1,31 +1,25 @@
 #!/bin/bash
+# Main entry point script: Sets up environment and runs the server.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-# Define the virtual environment directory
+# --- Step 1: Ensure Environment is Set Up ---
+echo "Ensuring Python environment and dependencies are up to date..."
+bash ./setup_env.sh
+echo "Environment check complete."
+
+# Define the virtual environment directory and Python executable
 VENV_DIR=".venv-cadquery"
 PYTHON_EXE="$VENV_DIR/bin/python" # Adjust for Windows if needed
 
-# --- Prerequisite Check ---
+# Double-check Python executable exists after setup
 if [ ! -f "$PYTHON_EXE" ]; then
-    echo "Error: Virtual environment $VENV_DIR not found or Python executable missing."
-    echo "Please run 'bash setup_env.sh' first."
+    echo "Error: Python executable still not found at $PYTHON_EXE after running setup."
     exit 1
 fi
 
-# --- Defaults ---
-PORT=8000
-HOST="0.0.0.0"
-RELOAD="" # Empty means no reload
-
-# --- Argument Parsing (Simplified for Typer) ---
-# Pass all arguments directly to the python script
-# Typer will handle parsing --port, --host, --reload etc.
-ARGS=("$@")
-
-# Build frontend if not in dev mode (optional, could be separate build step)
-# Keep this part as it's useful for ensuring static files exist
+# --- Step 2: Check/Build Frontend (Optional but helpful) ---
 FRONTEND_DIR="frontend"
 if [ -d "$FRONTEND_DIR" ]; then
     echo "Checking frontend build..."
@@ -47,8 +41,9 @@ else
     echo "Warning: Frontend directory '$FRONTEND_DIR' not found. Cannot build or serve frontend."
 fi
 
-
-# Run the server using the typer CLI in server.py
+# --- Step 3: Run the Server ---
+# Pass all arguments received by start.sh directly to the server.py CLI
+ARGS=("$@")
 echo "Starting MCP CadQuery server via server.py CLI..."
 echo "Arguments passed: ${ARGS[*]}"
-"$PYTHON_EXE" server.py "${ARGS[@]}" # Pass all original arguments to the script
+"$PYTHON_EXE" server.py "${ARGS[@]}"
