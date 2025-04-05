@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-# Script to create/update virtual environment and install dependencies using uv.
+"""
+Script to create/update the project's virtual environment (.venv-cadquery)
+and install/sync dependencies from requirements.txt using the 'uv' tool.
 
+Checks if 'uv' is installed, creates the venv if it doesn't exist (using a
+specified Python version), and then runs 'uv pip install' to ensure all
+dependencies are present and up-to-date.
+"""
 import os
 import subprocess
 import sys
@@ -10,8 +16,18 @@ VENV_DIR = ".venv-cadquery"
 REQUIREMENTS_FILE = "requirements.txt"
 PYTHON_VERSION = "3.11" # Specify desired Python version for uv
 
-def run_command(command, check=True, **kwargs):
-    """Helper to run a command and print output/errors."""
+def run_command(command: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess | None:
+    """
+    Helper to run a command, capture output, and handle common errors.
+
+    Args:
+        command: The command and arguments as a list of strings.
+        check: If True, raise CalledProcessError on non-zero exit code.
+        **kwargs: Additional arguments passed to subprocess.run.
+
+    Returns:
+        The CompletedProcess object if successful, otherwise exits the script.
+    """
     print(f"Running command: {' '.join(command)}")
     try:
         process = subprocess.run(
@@ -42,7 +58,11 @@ def run_command(command, check=True, **kwargs):
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
+    """
+    Main function to check for 'uv', create the virtual environment if needed,
+    and install/sync dependencies from requirements.txt using 'uv'.
+    """
     # Check if uv is installed
     print("Checking for uv...")
     if not shutil.which("uv"):

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-# Convenience script to run the server in HTTP SSE mode with defaults.
-# Ensures environment is set up first using setup_env.py.
+"""
+Convenience script to run the server (server_stdio.py) in HTTP SSE mode with defaults.
 
+Ensures the virtual environment is set up via setup_env.py first, then executes
+server_stdio.py with appropriate arguments (--port 8000, --reload).
+Additional arguments passed to this script are forwarded to server_stdio.py.
+"""
 import os
 import subprocess
 import sys
@@ -11,8 +15,18 @@ VENV_DIR = ".venv-cadquery"
 PYTHON_EXE = os.path.join(VENV_DIR, "bin", "python") # Adjust for Windows if needed
 SETUP_SCRIPT = "./setup_env.py"
 
-def run_command(command, check=True, **kwargs):
-    """Helper to run a command and print output/errors."""
+def run_command(command: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess | None:
+    """
+    Helper to run a command, capture output, and handle common errors.
+
+    Args:
+        command: The command and arguments as a list of strings.
+        check: If True, raise CalledProcessError on non-zero exit code.
+        **kwargs: Additional arguments passed to subprocess.run.
+
+    Returns:
+        The CompletedProcess object if successful, otherwise exits the script.
+    """
     print(f"Running command: {' '.join(command)}")
     try:
         # Use shell=False for security unless shell features are needed
@@ -43,7 +57,10 @@ def run_command(command, check=True, **kwargs):
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
+    """
+    Main function to set up the environment and execute the server in HTTP mode.
+    """
     print("Ensuring environment via setup_env.py...")
     # Use sys.executable to run the setup script with the same python
     run_command([sys.executable, SETUP_SCRIPT])
@@ -55,7 +72,7 @@ def main():
         sys.exit(1)
 
     # Prepare server command arguments
-    server_command = [PYTHON_EXE, "server.py", "--port", "8000", "--reload"]
+    server_command = [PYTHON_EXE, "server_stdio.py", "--port", "8000", "--reload"] # Use renamed server file
     # Pass through any additional arguments given to start_sse.py
     server_command.extend(sys.argv[1:])
 

@@ -12,7 +12,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the functions/variables to test from server.py in root
-from server import (
+from server_stdio import (
     execute_cqgi_script, # Needed for fixture
     handle_scan_part_library,
     handle_search_parts,

@@ -8,7 +8,7 @@ import io # For unsupported operation check
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the typer app instance from server.py in root
-from server import cli
+from server_stdio import cli
 
 runner = CliRunner()
 

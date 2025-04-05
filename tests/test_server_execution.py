@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the function to test from server.py in root
-from server import execute_cqgi_script
+from server_stdio import execute_cqgi_script
 
 # --- Fixtures ---
 @pytest.fixture(scope="module")
@@ -72,3 +72,7 @@ def test_execute_script_no_result_variable():
     assert build_result.success is True and build_result.exception is None
     assert len(build_result.results) == 0
     print("Script with no 'result' variable or show_object test passed.")
+
+
+# Parameter injection tests removed as CQModel.build() in CQ 2.5.2
+# does not support parameter injection via keyword arguments.

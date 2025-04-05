@@ -13,11 +13,11 @@
     *   **HTTP SSE Mode (Recommended for Dev/Web UI):**
         ```bash
         # Runs setup again (harmless) and starts server on port 8000 with reload
-        python3 ./start_sse.py
+        python3 ./server_sse.py
 
         # Or run manually with options after activating venv:
         # source .venv-cadquery/bin/activate
-        # python server.py --port 8080 --reload
+        # python server_stdio.py --port 8080 --reload
         ```
         **Connect MCP Client (HTTP SSE):**
         *   **SSE URL:** `http://127.0.0.1:8000/mcp` (Adjust port if used)
@@ -28,13 +28,13 @@
         # Activate venv first
         source .venv-cadquery/bin/activate
         # Run server.py with --stdio flag
-        python server.py --stdio
+        python server_stdio.py --stdio
 
         # Or with options:
-        # python server.py --stdio --library-dir /path/to/libs
+        # python server_stdio.py --stdio --library-dir /path/to/libs
         ```
         **Connect MCP Client (Stdio):**
-        *   Use the command `.venv-cadquery/bin/python server.py --stdio [OPTIONS]` in your client's Stdio connection configuration.
+        *   Use the command `.venv-cadquery/bin/python server_stdio.py --stdio [OPTIONS]` in your client's Stdio connection configuration.
 
 ---
 
@@ -48,7 +48,7 @@ The server can run in two modes:
 
 *   **Command-Line Interface:** Uses `typer` for easy configuration (host, port, reload, directories, stdio mode).
 *   **Setup Script:** `setup_env.py` (Python script) creates a virtual environment and installs dependencies using `uv`.
-*   **Convenience Scripts:** `start_sse.py` (Python) for easy HTTP server startup, `run_frontend_dev.py` (Python) for frontend dev server.
+*   **Convenience Scripts:** `server_sse.py` (Python) for easy HTTP server startup, `run_frontend_dev.py` (Python) for frontend dev server, `run_tests.py` (Python) for running tests.
 *   **Execute CadQuery Scripts:** Run arbitrary CadQuery Python scripts via the `execute_cadquery_script` tool.
 *   **Export Shapes:** Export generated shapes (currently SVG via `export_shape_to_svg`).
 *   **Part Library:**
@@ -89,15 +89,15 @@ The server can run in two modes:
         Use the convenience script:
         ```bash
         # Runs setup again (harmless) and starts server with reload
-        python3 ./start_sse.py
+        python3 ./server_sse.py
         # Pass arguments through:
-        # python3 ./start_sse.py --port 8080
+        # python3 ./server_sse.py --port 8080
         ```
         Or run manually after activating the environment:
         ```bash
         source .venv-cadquery/bin/activate
-        python server.py --port 8000 --reload
-        # See all options: python server.py --help
+        python server_stdio.py --port 8000 --reload
+        # See all options: python server_stdio.py --help
         ```
         Connect your MCP client using the HTTP SSE method (see MCP Configuration Examples below).
 
@@ -105,12 +105,12 @@ The server can run in two modes:
         Activate the environment first, then run `server.py` with the `--stdio` flag:
         ```bash
         source .venv-cadquery/bin/activate
-        python server.py --stdio
+        python server_stdio.py --stdio
 
         # Run stdio mode with a specific part library
-        # python server.py --stdio --library-dir /path/to/my/parts
+        # python server_stdio.py --stdio --library-dir /path/to/my/parts
         ```
-        Configure your MCP client to use the command `.venv-cadquery/bin/python server.py --stdio [OPTIONS]` for a Stdio connection.
+        Configure your MCP client to use the command `.venv-cadquery/bin/python server_stdio.py --stdio [OPTIONS]` for a Stdio connection.
 
 ## MCP Configuration Examples (e.g., for Cline/Cursor `.settings.json`)
 
@@ -130,7 +130,7 @@ You can run multiple instances of the server, each configured differently (e.g.,
   ]
 }
 ```
-*Run command (in terminal):* `python3 ./start_sse.py`
+*Run command (in terminal):* `python3 ./server_sse.py`
 
 ### Example 2: Stdio Connection
 
@@ -140,7 +140,7 @@ You can run multiple instances of the server, each configured differently (e.g.,
     {
       "name": "CadQuery Server (Stdio)",
       "type": "stdio",
-      "command": ["./.venv-cadquery/bin/python", "server.py", "--stdio"]
+      "command": ["./.venv-cadquery/bin/python", "server_stdio.py", "--stdio"]
     }
   ]
 }
@@ -170,10 +170,10 @@ You can run multiple instances of the server, each configured differently (e.g.,
 *Run commands (in separate terminals after running `python3 ./setup_env.py` once):*
 ```bash
 source .venv-cadquery/bin/activate
-python server.py --port 8001 --library-dir /path/to/project/alpha/parts --static-dir /path/to/project/alpha/static
+python server_stdio.py --port 8001 --library-dir /path/to/project/alpha/parts --static-dir /path/to/project/alpha/static
 # In another terminal:
 source .venv-cadquery/bin/activate
-python server.py --port 8002 --library-dir /path/to/project/beta/cad_files --static-dir /path/to/project/beta/output
+python server_stdio.py --port 8002 --library-dir /path/to/project/beta/cad_files --static-dir /path/to/project/beta/output
 ```
 
 ### Example 4: Multiple Projects (Stdio)
@@ -184,12 +184,12 @@ python server.py --port 8002 --library-dir /path/to/project/beta/cad_files --sta
     {
       "name": "CadQuery - Project Gamma (Stdio)",
       "type": "stdio",
-      "command": ["./.venv-cadquery/bin/python", "server.py", "--stdio", "--library-dir", "/path/to/project/gamma/libs"]
+      "command": ["./.venv-cadquery/bin/python", "server_stdio.py", "--stdio", "--library-dir", "/path/to/project/gamma/libs"]
     },
      {
       "name": "CadQuery - Project Delta (Stdio)",
       "type": "stdio",
-      "command": ["./.venv-cadquery/bin/python", "server.py", "--stdio", "--library-dir", "/another/path/delta_cq"]
+      "command": ["./.venv-cadquery/bin/python", "server_stdio.py", "--stdio", "--library-dir", "/another/path/delta_cq"]
     }
   ]
 }
@@ -202,15 +202,21 @@ If you want to actively develop the frontend with hot-reloading:
 
 1.  **Ensure environment is set up:** `python3 ./setup_env.py`
 2.  **Install frontend dependencies:** `cd frontend && npm install && cd ..`
-3.  **Start the backend server (in HTTP mode, separate terminal):** `python3 ./start_sse.py`
+3.  **Start the backend server (in HTTP mode, separate terminal):** `python3 ./server_sse.py`
 4.  **Start the frontend development server (in another terminal):** `python3 ./run_frontend_dev.py`
     The frontend will typically be available at `http://localhost:5173`.
 
 ## Running Tests
 
 1.  **Ensure environment is set up:** `python3 ./setup_env.py`
-2.  **Activate the virtual environment:** `source .venv-cadquery/bin/activate`
-3.  **Run tests:** `pytest tests/`
+2.  **Run tests using the script:**
+    ```bash
+    ./run_tests.py
+    # Pass arguments to pytest:
+    # ./run_tests.py -v -k "part_library"
+    ```
+3.  **(Manual Alternative) Activate the virtual environment:** `source .venv-cadquery/bin/activate`
+4.  **(Manual Alternative) Run tests:** `pytest tests/`
 
 ## Project Structure
 
@@ -240,9 +246,10 @@ If you want to actively develop the frontend with hot-reloading:
 ├── requirements.txt    # Python dependencies (used by setup_env.py)
 ├── run_dev.py          # Prints instructions for running dev environment
 ├── run_frontend_dev.py # Runs frontend dev server
-├── server.py           # Main FastAPI backend application & CLI entrypoint
-├── setup_env.py        # Python environment setup script
-└── start_sse.py        # Convenience script to run HTTP server
+├── run_tests.py        # Runs pytest in the correct environment
+├── server_sse.py       # Convenience script to run HTTP SSE server
+├── server_stdio.py     # Main FastAPI backend application & CLI entrypoint
+└── setup_env.py        # Python environment setup script
 ```
 
 ## Contributing
@@ -262,7 +269,7 @@ Contributions are welcome! Please follow these guidelines:
 ## MCP Tools Provided
 
 *   `execute_cadquery_script`: Executes a given CadQuery script string.
-    *   `arguments`: `{"script": "...", "parameters": {...}}`
+    *   `arguments`: `{"script": "...", "parameters": {...}}` or `{"script": "...", "parameter_sets": [{...}, ...]}` (See Parameter Substitution section)
 *   `export_shape_to_svg`: Exports a shape from a previous script execution result to an SVG file served by the backend.
     *   `arguments`: `{"result_id": "...", "shape_index": 0, "filename": "optional_name.svg", "options": {...}}`
 *   `scan_part_library`: Scans the configured part library directory, updates the index, and generates/caches SVG previews.

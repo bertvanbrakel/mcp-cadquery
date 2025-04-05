@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-# Script to run the frontend development server (Vite).
+"""
+Script to run the frontend development server (Vite).
 
+Checks for npm, installs dependencies if needed, and starts the Vite dev server.
+"""
 import os
 import subprocess
 import sys
@@ -8,8 +11,19 @@ import shutil
 
 FRONTEND_DIR = "frontend"
 
-def run_command_interactive(command, check=True, **kwargs):
-    """Helper to run a command interactively."""
+def run_command_interactive(command: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess | None:
+    """
+    Helper to run a command interactively, showing output and handling common errors.
+
+    Args:
+        command: The command and arguments as a list of strings.
+        check: If True, raise CalledProcessError on non-zero exit code.
+        **kwargs: Additional arguments passed to subprocess.run.
+
+    Returns:
+        The CompletedProcess object if successful, otherwise exits the script.
+        Returns None if interrupted by KeyboardInterrupt.
+    """
     print(f"Running command: {' '.join(command)}")
     try:
         # Run without capturing output, allow interaction
@@ -30,7 +44,13 @@ def run_command_interactive(command, check=True, **kwargs):
         print(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
-def main():
+def main() -> None:
+    """
+    Main function to set up and run the frontend development server.
+
+    Checks for the frontend directory and npm, runs 'npm install' if
+    node_modules is missing, then starts the Vite dev server using 'npm run dev'.
+    """
     if not os.path.isdir(FRONTEND_DIR):
         print(f"Error: Frontend directory '{FRONTEND_DIR}' not found.")
         sys.exit(1)

@@ -59,7 +59,8 @@ ASSETS_DIR_PATH = os.path.join(STATIC_DIR, "assets")
 # --- SSE Connection Management ---
 sse_connections: List[asyncio.Queue] = []
 
-async def push_sse_message(message_data: dict):
+async def push_sse_message(message_data: dict) -> None:
+    """Pushes a message dictionary to all connected SSE clients."""
     if not message_data: return
     log.info(f"Pushing message to {len(sse_connections)} SSE client(s): {json.dumps(message_data)}")
     for queue in sse_connections:
@@ -68,7 +69,8 @@ async def push_sse_message(message_data: dict):
 
 # --- FastAPI Endpoints ---
 @app.get("/mcp")
-async def mcp_sse_endpoint(request: Request):
+async def mcp_sse_endpoint(request: Request) -> EventSourceResponse:
+    """Handles SSE connections, keeping track of clients and pushing messages."""
     queue = asyncio.Queue()
     sse_connections.append(queue)
     client_host = request.client.host if request.client else "unknown"
@@ -87,12 +89,19 @@ async def mcp_sse_endpoint(request: Request):
             log.info(f"SSE connection from {client_host} closed. Remaining connections: {len(sse_connections)}")
     return EventSourceResponse(event_generator())
 
-async def _process_and_push(request: dict):
+async def _process_and_push(request: dict) -> None:
+    """Helper coroutine to process a tool request and push the result via SSE."""
     message_to_push = process_tool_request(request)
     await push_sse_message(message_to_push)
 
 @app.post("/mcp/execute")
-async def execute_tool_endpoint(request_body: dict = Body(...)):
+async def execute_tool_endpoint(request_body: dict = Body(...)) -> dict:
+    """
+    FastAPI endpoint to receive tool execution requests via POST.
+
+    Validates the request, schedules the processing in the background,
+    and returns an immediate 'processing' status.
+    """
     request_id = request_body.get("request_id", "unknown")
     tool_name = request_body.get("tool_name")
     log.info(f"Received execution request via POST (ID: {request_id}, Tool: {tool_name})")
@@ -104,6 +113,17 @@ async def execute_tool_endpoint(request_body: dict = Body(...)):
 
 # --- Tool Processing Logic ---
 def process_tool_request(request: dict) -> Optional[dict]:
+    """
+    Processes a tool request dictionary, calls the appropriate handler,
+    and formats the response or error message for SSE push or stdio output.
+
+    Args:
+        request: The dictionary containing request_id, tool_name, and arguments.
+
+    Returns:
+        A dictionary formatted for SSE/stdio output (containing type, request_id,
+        and either result or error), or None if no message should be sent.
+    """
     request_id = request.get("request_id", "unknown")
     tool_name = request.get("tool_name")
     result_message: dict | None = None; error_message: str | None = None
@@ -131,6 +151,18 @@ def process_tool_request(request: dict) -> Optional[dict]:
 
 # --- Tool Implementations ---
 def parse_docstring_metadata(docstring: Optional[str]) -> Dict[str, Any]:
+    """
+    Parses metadata key-value pairs from a Python docstring.
+
+    Looks for lines formatted as 'Key: Value'. Converts keys to lowercase
+    snake_case. Handles 'Tags' key specially, splitting by comma.
+
+    Args:
+        docstring: The docstring to parse.
+
+    Returns:
+        A dictionary containing the parsed metadata.
+    """
     metadata = {};
     if not docstring: return metadata
     lines = docstring.strip().split('\n')
@@ -144,28 +176,124 @@ def parse_docstring_metadata(docstring: Optional[str]) -> Dict[str, Any]:
     return metadata
 
 def execute_cqgi_script(script_content: str) -> cqgi.BuildResult:
+    """Parses and executes a CQGI script."""
     log.info("Parsing script with CQGI..."); model = cqgi.parse(script_content)
     log.info("Script parsed."); log.info(f"Building model...")
+    # Build without attempting parameter injection via arguments
     build_result = model.build(); log.info(f"Model build finished. Success: {build_result.success}")
     if not build_result.success: log.error(f"Script execution failed: {build_result.exception}"); raise Exception(f"Script execution failed: {build_result.exception}")
     return build_result
 
-def handle_execute_cadquery_script(request) -> dict:
+def _substitute_parameters(script_lines: List[str], params: Dict[str, Any]) -> List[str]:
+    """Substitutes parameters into script lines marked with # PARAM."""
+    modified_lines = []
+    param_pattern = re.compile(r"^\s*(\w+)\s*=\s*.*#\s*PARAM\s*$")
+    for line in script_lines:
+        match = param_pattern.match(line)
+        if match:
+            param_name = match.group(1)
+            if param_name in params:
+                value = params[param_name]
+                # Format value as Python literal (basic handling)
+                if isinstance(value, str): formatted_value = repr(value)
+                elif isinstance(value, (int, float, bool, list, dict, tuple)) or value is None: formatted_value = repr(value)
+                else: formatted_value = str(value) # Fallback for other types
+                indent = line[:match.start(1)] # Preserve original indentation
+                modified_lines.append(f"{indent}{param_name} = {formatted_value} # PARAM (Substituted)")
+                log.debug(f"Substituted parameter '{param_name}' with value: {formatted_value}")
+                continue # Skip original line
+        modified_lines.append(line)
+    return modified_lines
+
+def handle_execute_cadquery_script(request: dict) -> dict:
+    """
+    Handles the 'execute_cadquery_script' tool request.
+
+    Supports parameter substitution using '# PARAM' markers and can process
+    multiple parameter sets provided via 'parameter_sets' or a single set
+    via 'parameters'. Executes the script for each set and returns a summary.
+
+    Args:
+        request: The tool request dictionary.
+
+    Returns:
+        A dictionary summarizing the execution results for all parameter sets.
+    """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling execute_cadquery_script request (ID: {request_id})")
     try:
-        args = request.get("arguments", {}); script_content = args.get("script"); parameters = args.get("parameters", {})
-        if not script_content: raise ValueError("Missing 'script' argument.")
-        if not isinstance(parameters, dict): raise ValueError("'parameters' argument must be a dictionary.")
-        log.info(f"Script content received (first 100 chars): {script_content[:100]}..."); log.info(f"Parameters received: {parameters}")
-        build_result = execute_cqgi_script(script_content); result_id = str(uuid.uuid4())
-        shape_results[result_id] = build_result; log.info(f"Stored successful build result with ID: {result_id}")
-        num_shapes = len(build_result.results) if build_result.results else 0
-        message = f"Script executed successfully. Produced {num_shapes} shape(s)."
-        return {"success": True, "message": message, "result_id": result_id, "shapes_count": num_shapes}
-    except Exception as e: error_msg = f"Error during script execution handling: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
+        args = request.get("arguments", {}); script_content = args.get("script")
+        # Support both 'parameters' (single dict) and 'parameter_sets' (list of dicts)
+        parameter_sets_arg = args.get("parameter_sets")
+        parameters_arg = args.get("parameters")
+        parameter_sets: List[Dict[str, Any]] = []
 
-def handle_export_shape(request) -> dict:
+        if parameter_sets_arg is not None:
+            if not isinstance(parameter_sets_arg, list): raise ValueError("'parameter_sets' argument must be a list of dictionaries.")
+            if not all(isinstance(p, dict) for p in parameter_sets_arg): raise ValueError("Each item in 'parameter_sets' must be a dictionary.")
+            parameter_sets = parameter_sets_arg
+        elif parameters_arg is not None:
+            if not isinstance(parameters_arg, dict): raise ValueError("'parameters' argument must be a dictionary.")
+            parameter_sets = [parameters_arg] # Treat single dict as a list with one set
+        else:
+            parameter_sets = [{}] # Default: run once with no substitutions
+
+        if not script_content: raise ValueError("Missing 'script' argument.")
+        log.info(f"Script content received (first 100 chars): {script_content[:100]}...")
+        log.info(f"Processing {len(parameter_sets)} parameter set(s).")
+
+        original_script_lines = script_content.splitlines()
+        results_summary = []
+
+        for i, params in enumerate(parameter_sets):
+            result_id = f"{request_id}_{i}"
+            log.info(f"Executing script for parameter set {i} (Result ID: {result_id}) with params: {params}")
+            try:
+                modified_script_lines = _substitute_parameters(original_script_lines, params)
+                modified_script = "\n".join(modified_script_lines)
+                log.debug(f"Modified script for set {i}:\n{modified_script[:500]}...") # Log start of modified script
+
+                build_result = execute_cqgi_script(modified_script)
+                shape_results[result_id] = build_result
+                num_shapes = len(build_result.results) if build_result.results else 0
+                results_summary.append({
+                    "result_id": result_id,
+                    "success": build_result.success,
+                    "shapes_count": num_shapes,
+                    "error": str(build_result.exception) if build_result.exception else None
+                })
+                log.info(f"Stored build result for set {i} with ID: {result_id}. Success: {build_result.success}")
+            except Exception as exec_err:
+                log.error(f"Execution failed for parameter set {i} (Result ID: {result_id}): {exec_err}", exc_info=True)
+                results_summary.append({
+                    "result_id": result_id,
+                    "success": False,
+                    "shapes_count": 0,
+                    "error": f"Handler execution error: {exec_err}"
+                })
+
+        total_sets = len(parameter_sets)
+        successful_sets = sum(1 for r in results_summary if r["success"])
+        message = f"Script execution processed for {total_sets} parameter set(s). Successful: {successful_sets}, Failed: {total_sets - successful_sets}."
+        return {"success": True, "message": message, "results": results_summary}
+
+    except Exception as e: error_msg = f"Error during script execution handling: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
+# Removed leftover lines from previous function version
+
+def handle_export_shape(request: dict) -> dict:
+    """
+    Handles the 'export_shape' tool request.
+
+    Retrieves a previously generated shape using result_id and shape_index,
+    then exports it to the specified filename and format using the refactored
+    `export_shape_to_file` function.
+
+    Args:
+        request: The tool request dictionary.
+
+    Returns:
+        A dictionary indicating success and the output filename.
+    """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling export_shape request (ID: {request_id})")
     try:
@@ -182,14 +310,42 @@ def handle_export_shape(request) -> dict:
         shape_to_export = build_result.results[shape_index].shape
         log.info(f"Retrieved shape at index {shape_index} from result ID {result_id}.")
         log.info(f"Attempting to export shape to '{filename}' (Format: {export_format or 'Infer'}, Options: {export_options})")
-        output_dir = os.path.dirname(filename);
-        if output_dir: os.makedirs(output_dir, exist_ok=True)
-        exporters.export(shape_to_export, filename, exportType=export_format, opt=export_options)
-        log.info(f"Shape successfully exported to '{filename}'.")
+        # Call the refactored export function
+        export_shape_to_file(shape_to_export, filename, export_format, export_options)
+        log.info(f"Shape successfully exported via export_shape_to_file to '{filename}'.")
         return {"success": True, "message": f"Shape successfully exported to {filename}.", "filename": filename}
-    except Exception as e: error_msg = f"Error during shape export: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
+    except Exception as e: error_msg = f"Error during shape export handling: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
+# --- Refactored Export Logic ---
+def export_shape_to_file(shape_to_export: Any, output_path: str, export_format: Optional[str] = None, export_options: Optional[dict] = None):
+     """Exports a CadQuery shape/workplane to a specified file."""
+     shape = shape_to_export.val() if isinstance(shape_to_export, cq.Workplane) else shape_to_export
+     if not isinstance(shape, cq.Shape): raise TypeError(f"Object to export is not a cq.Shape or cq.Workplane, but {type(shape)}")
+     if export_options is None: export_options = {}
+     log.info(f"Exporting shape to file '{output_path}' (Format: {export_format or 'Infer'}, Options: {export_options})")
+     try:
+         output_dir = os.path.dirname(output_path)
+         if output_dir: os.makedirs(output_dir, exist_ok=True)
+         exporters.export(shape, output_path, exportType=export_format, opt=export_options)
+         log.info(f"Shape successfully exported to file '{output_path}'.")
+     except Exception as e:
+         error_msg = f"Core shape export to file '{output_path}' failed: {e}"
+         log.error(error_msg, exc_info=True)
+         raise Exception(error_msg) from e
+ 
 
-def export_shape_to_svg_file(shape_to_render: Any, output_path: str, svg_opts: dict):
+def export_shape_to_svg_file(shape_to_render: Any, output_path: str, svg_opts: dict) -> None:
+    """
+    Exports a CadQuery shape or Workplane to an SVG file.
+
+    Args:
+        shape_to_render: The CadQuery object (Shape or Workplane) to export.
+        output_path: The full path to save the SVG file.
+        svg_opts: A dictionary of options for cq.exporters.export (SVG specific).
+
+    Raises:
+        TypeError: If the object is not a cq.Shape or cq.Workplane.
+        Exception: If the export process fails.
+    """
     shape = shape_to_render.val() if isinstance(shape_to_render, cq.Workplane) else shape_to_render
     if not isinstance(shape, cq.Shape): raise TypeError(f"Object to export is not a cq.Shape or cq.Workplane, but {type(shape)}")
     log.info(f"Exporting shape to SVG '{output_path}' with options: {svg_opts}")
@@ -199,7 +355,20 @@ def export_shape_to_svg_file(shape_to_render: Any, output_path: str, svg_opts: d
         log.info(f"Shape successfully exported to SVG '{output_path}'.")
     except Exception as e: error_msg = f"Core SVG export failed: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg) from e
 
-def handle_export_shape_to_svg(request) -> dict:
+def handle_export_shape_to_svg(request: dict) -> dict:
+    """
+    Handles the 'export_shape_to_svg' tool request.
+
+    Retrieves a previously generated shape, determines the output path/URL
+    in the RENDER_DIR, merges default and provided SVG options, and calls
+    `export_shape_to_svg_file` to perform the export.
+
+    Args:
+        request: The tool request dictionary.
+
+    Returns:
+        A dictionary indicating success and the output file's URL path.
+    """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling export_shape_to_svg request (ID: {request_id})")
     try:
@@ -223,7 +392,21 @@ def handle_export_shape_to_svg(request) -> dict:
         return {"success": True, "message": f"Shape successfully exported to SVG: {output_url}.", "filename": output_url}
     except Exception as e: error_msg = f"Error during SVG export handling: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
 
-def handle_scan_part_library(request) -> dict:
+def handle_scan_part_library(request: dict) -> dict:
+    """
+    Handles the 'scan_part_library' tool request.
+
+    Scans the PART_LIBRARY_DIR for .py files, executes them using CQGI,
+    extracts metadata, generates SVG previews, and updates the in-memory
+    `part_index`. Handles caching based on file modification times and
+    removes entries/previews for deleted files.
+
+    Args:
+        request: The tool request dictionary (arguments are currently ignored).
+
+    Returns:
+        A dictionary summarizing the scan results (counts for scanned, indexed, etc.).
+    """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling scan_part_library request (ID: {request_id})")
     library_path = os.path.abspath(PART_LIBRARY_DIR); preview_dir_path = PART_PREVIEW_DIR_PATH; preview_dir_url = f"/{PART_PREVIEW_DIR_NAME}"
@@ -270,7 +453,21 @@ def handle_scan_part_library(request) -> dict:
     log.info(summary_msg)
     return { "success": True, "message": summary_msg, "scanned": scanned_count, "indexed": indexed_count, "updated": updated_count, "cached": cached_count, "removed": removed_count, "errors": error_count }
 
-def handle_search_parts(request) -> dict:
+def handle_search_parts(request: dict) -> dict:
+    """
+    Handles the 'search_parts' tool request.
+
+    Searches the in-memory `part_index` based on a query string. Matches against
+    part ID, metadata fields (part name, description, filename), and tags.
+    Returns a list of matching parts, sorted by a simple relevance score.
+    An empty query returns all parts.
+
+    Args:
+        request: The tool request dictionary, expecting 'query' in arguments.
+
+    Returns:
+        A dictionary containing the list of matching part data objects.
+    """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling search_parts request (ID: {request_id})")
     try:
@@ -294,7 +491,15 @@ def handle_search_parts(request) -> dict:
     except Exception as e: error_msg = f"Error during part search: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
 
 # --- Static Files Hosting ---
-def configure_static_files(static_dir, render_dir_name, render_dir_path, preview_dir_name, preview_dir_path, assets_dir_path):
+def configure_static_files(static_dir: str, render_dir_name: str, render_dir_path: str, preview_dir_name: str, preview_dir_path: str, assets_dir_path: str) -> None:
+    """
+    Configures FastAPI static file serving for frontend, renders, and previews.
+
+    Mounts StaticFiles instances for renders, previews, and assets if the
+    corresponding directories exist. Sets up a catch-all route to serve
+    files from the static_dir or fall back to index.html for SPA routing.
+    Includes a fallback root route if the static directory itself is missing.
+    """
     log.info(f"Configuring static files from base: {static_dir}")
     if os.path.isdir(render_dir_path): app.mount(f"/{render_dir_name}", StaticFiles(directory=render_dir_path), name=render_dir_name); log.info(f"Mounted renders directory '{render_dir_path}' at '/{render_dir_name}'")
     else: log.warning(f"Renders directory '{render_dir_path}' not found.")
@@ -303,7 +508,8 @@ def configure_static_files(static_dir, render_dir_name, render_dir_path, preview
     if os.path.isdir(assets_dir_path): app.mount("/assets", StaticFiles(directory=assets_dir_path), name="assets"); log.info(f"Mounted assets directory '{assets_dir_path}' at '/assets'")
     else: log.warning(f"Assets directory '{assets_dir_path}' not found.")
     @app.get("/{full_path:path}")
-    async def serve_static_or_index(request: Request, full_path: str):
+    async def serve_static_or_index(request: Request, full_path: str) -> Union[FileResponse, Response, HTTPException]:
+        """Serves static files or the index.html for SPA routing."""
         if full_path.startswith("mcp/"): raise HTTPException(status_code=404, detail="API route not found")
         potential_file_path = os.path.join(static_dir, full_path); log.debug(f"Checking for static file at: {potential_file_path}")
         if os.path.isfile(potential_file_path):
@@ -318,10 +524,13 @@ def configure_static_files(static_dir, render_dir_name, render_dir_path, preview
             raise HTTPException(status_code=404, detail="index.html not found.")
     if not os.path.isdir(static_dir):
         @app.get("/")
-        async def root_fallback(): log.warning(f"Static directory '{static_dir}' not found."); return {"message": "Backend is running, but frontend is not built or found."}
+        async def root_fallback() -> dict:
+            """Fallback root endpoint if static directory is missing."""
+            log.warning(f"Static directory '{static_dir}' not found."); return {"message": "Backend is running, but frontend is not built or found."}
 
 # --- Stdio Mode ---
-async def run_stdio_mode():
+async def run_stdio_mode() -> None:
+    """Runs the server in MCP Stdio mode, reading JSON requests from stdin."""
     log.info("Starting server in MCP stdio mode...")
     reader = asyncio.StreamReader(); protocol = asyncio.StreamReaderProtocol(reader)
     await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
@@ -398,7 +607,7 @@ def main(
     except Exception as e: log.error(f"Initial part library scan failed: {e}", exc_info=True)
     log.info(f"Starting Uvicorn server on {host}:{port}...");
     # Use "server:app" as the target since server.py is in the root
-    uvicorn.run("server:app", host=host, port=port, reload=reload)
+    uvicorn.run("server_stdio:app", host=host, port=port, reload=reload) # Updated target after rename
 
 # Removed check_and_setup_env()
 
