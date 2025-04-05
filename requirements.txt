@@ -3,4 +3,3 @@ fastapi
 uvicorn[standard]
 sse-starlette
 pytest
-sse-starlette

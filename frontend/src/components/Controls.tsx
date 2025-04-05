@@ -20,7 +20,7 @@ const Controls: React.FC<ControlsProps> = ({ onExecute, onRender, isConnected, c
         disabled={!isConnected || !canRender || !isIdle}
         style={{ marginLeft: '10px' }}
       >
-        Render Last Result (SVG)
+        Render Last Result (3JS)
       </button>
     </div>
   );

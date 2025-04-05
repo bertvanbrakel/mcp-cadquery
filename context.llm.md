@@ -1,46 +1,28 @@
-# MCP CadQuery Server Project
+# CadQuery MCP Server TDD Build
 
-**Objective:** Create a Python-based MCP server to control CadQuery.
+**Goal:** Create a reliable backend server first, verifying each piece of functionality with tests using `pytest`. Ignore UI for now.
 
-**Current Phase:** Implementation (UI Debugging Paused)
+**Status:** Core backend logic refactored and tested.
 
-**Tasks:**
+**Completed Steps:**
+1.  [X] Review existing project files (`requirements.txt`, `server.py`, `tests/test_environment.py`).
+    *   [X] `requirements.txt` (Corrected duplicate entry)
+    *   [X] `server.py`
+    *   [X] `tests/test_environment.py` (Corrected assertion)
+2.  [X] Ensure the environment test (`tests/test_environment.py`) passes reliably. (Passed using `.venv-cadquery/bin/pytest`)
+3.  [X] Write tests for core CadQuery functionality (box creation, SVG export) in `tests/test_cadquery_core.py`. (Existing tests passed)
+4.  [X] Write tests for the CQGI script execution logic (Refactored `handle_execute_cadquery_script` into `execute_cqgi_script`, tests passed).
+5.  [X] Write tests for the SVG export logic (Refactored `handle_export_shape_to_svg` into `export_shape_to_svg_file`, tests passed).
 
-1.  [x] Research CadQuery: (See `research_context.llm.md`)
-    *   [x] Find official documentation.
-    *   [x] Identify latest stable release (2.5.2).
-    *   [x] Understand API (Workplane, Sketch, Assembly, Selectors, CQGI, Exporters, Vis).
-    *   [x] Determine installation requirements (pip, Python 3.9+, uv compatible).
-    *   [x] Research rendering/validation methods (vis.show screenshots, exporters).
-    *   [x] Check installation via `uv` (feasible via pip).
-2.  [ ] Plan MCP Server Structure: (Done - see thought process)
-3.  [x] Implement MCP Server (Stdio):
-    *   [x] Create project structure (`server.py`, `requirements.txt`, `run_server.sh`).
-    *   [x] Implement basic MCP stdio communication loop in `server.py`.
-    *   [x] Implement `execute_cadquery_script` tool using CQGI.
-    *   [x] Implement `export_shape` tool using exporters.
-    *   [x] Implement `render_shape_to_png` tool using `vis.show`.
-    *   [x] Implement automatic dependency installation via `run_server.sh`.
-4.  [ ] Add SSE Support:
-    *   [ ] Add `fastapi`, `uvicorn` to `requirements.txt`.
-    *   [ ] Refactor `server.py` for FastAPI & SSE.
-    *   [ ] Update `run_server.sh` to use `uvicorn`.
-5.  [ ] Test MCP Server (SSE).
-6.  [ ] Add Web UI (React):
-    *   [ ] Create `frontend` directory.
-    *   [ ] Initialize React project (Vite).
-    *   [ ] Configure FastAPI to serve static UI files.
-    *   [x] Update `run_server.sh` (now backend only).
-    *   [x] Create `run_dev.sh` for concurrent dev servers with flags (`--port`, `--verbose`).
-    *   [x] Develop basic UI components (`App.jsx`).
-    *   [x] Refactor UI into components.
-    *   [x] Convert UI to TypeScript.
-    *   [x] Implement auto-render via SVG export.
-7.  [ ] Debug/Refine UI (Paused).
+**Next Steps (Beyond Initial Request):**
+*   Consider refactoring/testing `handle_export_shape`.
+*   Add tests for the FastAPI endpoint handlers (`handle_execute_cadquery_script`, `handle_export_shape_to_svg`, etc.) using a test client like `httpx`.
+*   Implement parameter injection logic if needed in `handle_execute_cadquery_script`.
+*   Integrate with the frontend UI (later phase).
 
 **Relevant Info:**
-
-*   Targeting recent CadQuery releases.
-*   Use Python `uv` for environment management.
-*   Server needs low-level and high-level access.
-*   Server needs validation capabilities.
+*   Focus on backend logic and testing.
+*   Assume unattended execution (no user interaction needed for tests).
+*   Use `pytest` for testing (run via `.venv-cadquery/bin/pytest`).
+*   Refactored CQGI execution logic into `execute_cqgi_script(script_content: str)`.
+*   Refactored SVG export logic into `export_shape_to_svg_file(shape_to_render: cq.Shape, output_path: str, svg_opts: dict)`.

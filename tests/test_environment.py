@@ -50,7 +50,7 @@ def test_cadquery_import():
         )
         print(f"Import test stdout: {result.stdout.strip()}")
         print(f"Import test stderr: {result.stderr.strip()}")
-        assert "cadquery" in sys.modules or result.returncode == 0 # Check if import succeeded
+        assert result.returncode == 0 # Check if import succeeded (implicit via check=True, explicit here for clarity)
         print("cadquery imported successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Import test stdout: {e.stdout}")
