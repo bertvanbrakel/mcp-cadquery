@@ -7,6 +7,8 @@ import json
 import asyncio
 import time
 import tempfile # Keep for potential future use, though not strictly needed now
+import subprocess # Import subprocess for mocking
+from unittest.mock import patch # Import patch for mocking
 from fastapi.testclient import TestClient
 from fastapi.staticfiles import StaticFiles # Import StaticFiles
 
@@ -278,6 +280,58 @@ def test_mcp_execute_search_parts_no_results(client): # Removed fixture dependen
     # assert len(result_data["results"]) == 0, f"Search for '{search_term}' should find no results" # This check is problematic now
     print("Search for non-existent term handled correctly.")
     print("POST /mcp/execute search_parts (no results) test passed.")
+   
+def test_mcp_execute_launch_cq_editor_success(client):
+    """Test launch_cq_editor via API (success case)."""
+    request_id = f"test-launch-cq-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "launch_cq_editor", "arguments": {}}
+    print(f"\nTesting POST /mcp/execute launch_cq_editor (Success, ID: {request_id})...")
+
+    # Mock subprocess.Popen
+    with patch('server.subprocess.Popen') as mock_popen:
+        # Configure the mock process object if needed (e.g., mock_popen.return_value.pid = 12345)
+        mock_process = mock_popen.return_value
+        mock_process.pid = 12345 # Example PID
+
+        response = client.post("/mcp/execute", json=request_body)
+
+        # Check immediate response
+        assert response.status_code == 200
+        assert response.json() == {"status": "processing", "request_id": request_id}
+
+        # Allow time for the background task to potentially run (though it's mocked)
+        time.sleep(0.1)
+
+        # Check that Popen was called correctly
+        mock_popen.assert_called_once_with(["CQ-editor"]) # Use correct case
+
+    # Ideally, we'd check for a success SSE message here, but that's complex with TestClient.
+    # Checking the Popen call is the primary goal for this unit test.
+    print("POST /mcp/execute launch_cq_editor (Success) test passed.")
+   
+   
+def test_mcp_execute_launch_cq_editor_not_found(client):
+    """Test launch_cq_editor via API (cq-editor not found)."""
+    request_id = f"test-launch-cq-fail-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "launch_cq_editor", "arguments": {}}
+    print(f"\nTesting POST /mcp/execute launch_cq_editor (Not Found, ID: {request_id})...")
+
+    # Mock subprocess.Popen to raise FileNotFoundError
+    with patch('server.subprocess.Popen', side_effect=FileNotFoundError("CQ-editor not found")) as mock_popen: # Use correct case in error message if needed
+        response = client.post("/mcp/execute", json=request_body)
+
+        # Check immediate response
+        assert response.status_code == 200
+        assert response.json() == {"status": "processing", "request_id": request_id}
+
+        # Allow time for the background task to potentially run
+        time.sleep(0.1)
+
+        # Check that Popen was called
+        mock_popen.assert_called_once_with(["CQ-editor"]) # Use correct case
+
+    # Ideally, we'd check for a tool_error SSE message here.
+    print("POST /mcp/execute launch_cq_editor (Not Found) test passed (checked immediate response and mock call).")
 
 # --- Test Cases for API Error Handling ---
 
@@ -347,6 +401,195 @@ def test_mcp_execute_export_invalid_index(client, stored_build_result_id_for_han
     assert not os.path.exists(expected_path), "File should not be created for invalid shape_index"
     print("Check: Export file not created for invalid shape_index (as expected).")
     print("POST /mcp/execute export with invalid shape_index test passed.")
+
+
+# --- Test Cases for get_shape_properties Handler ---
+
+def test_mcp_execute_get_shape_properties_success(client, stored_build_result_id_for_handlers):
+    """Test get_shape_properties via API (success case)."""
+    result_id = stored_build_result_id_for_handlers
+    request_id = f"test-get-props-success-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_properties", "arguments": {"result_id": result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_properties (Success, ID: {request_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    # Check immediate response
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    # Ideally, check SSE message for properties. For now, ensure no crash.
+    # Check that the original result still exists (handler didn't delete it)
+    assert result_id in shape_results
+
+    print("POST /mcp/execute get_shape_properties (Success) test passed (checked immediate response).")
+
+
+def test_mcp_execute_get_shape_properties_nonexistent_result(client):
+    """Test get_shape_properties with a result_id that doesn't exist via API."""
+    request_id = f"test-get-props-no-result-{uuid.uuid4()}"
+    non_existent_result_id = "does-not-exist-props-123"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_properties", "arguments": {"result_id": non_existent_result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_properties with non-existent result_id ({non_existent_result_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run and potentially fail
+    time.sleep(0.1)
+
+    # Check that the non-existent ID wasn't somehow added
+    assert non_existent_result_id not in shape_results
+
+    print("POST /mcp/execute get_shape_properties with non-existent result_id test passed (checked immediate response).")
+
+
+def test_mcp_execute_get_shape_properties_invalid_index(client, stored_build_result_id_for_handlers):
+    """Test get_shape_properties with an invalid shape_index via API."""
+    result_id = stored_build_result_id_for_handlers
+    request_id = f"test-get-props-bad-index-{uuid.uuid4()}"
+    invalid_shape_index = 999
+    request_body = {"request_id": request_id, "tool_name": "get_shape_properties", "arguments": {"result_id": result_id, "shape_index": invalid_shape_index}}
+    print(f"\nTesting POST /mcp/execute get_shape_properties with invalid shape_index ({invalid_shape_index})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    # Check that the original result still exists
+    assert result_id in shape_results
+
+    print("POST /mcp/execute get_shape_properties with invalid shape_index test passed (checked immediate response).")
+
+def test_mcp_execute_get_shape_properties_failed_build(client):
+    """Test get_shape_properties for a result_id corresponding to a failed build."""
+    # Create a failed build result
+    script_fail = "import cadquery as cq\nresult = cq.Workplane('XY').box(1,1,0).edges('>Z').fillet(1)\nshow_object(result)" # Fillet radius too large
+    build_res_fail = execute_cqgi_script(script_fail)
+    assert build_res_fail.success is False
+    failed_result_id = f"handler-test-fail-{uuid.uuid4()}"
+    shape_results[failed_result_id] = build_res_fail
+    print(f"\nFixture: Created FAILED build result with ID {failed_result_id}")
+
+    request_id = f"test-get-props-fail-build-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_properties", "arguments": {"result_id": failed_result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_properties for failed build ({failed_result_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    # Check that the failed result still exists
+    assert failed_result_id in shape_results
+print("POST /mcp/execute get_shape_properties for failed build test passed (checked immediate response).")
+
+
+# --- Test Cases for get_shape_description Handler ---
+
+def test_mcp_execute_get_shape_description_success(client, stored_build_result_id_for_handlers):
+    """Test get_shape_description via API (success case)."""
+    result_id = stored_build_result_id_for_handlers
+    request_id = f"test-get-desc-success-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_description", "arguments": {"result_id": result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_description (Success, ID: {request_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    # Check immediate response
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    # Ideally, check SSE message for description. For now, ensure no crash.
+    assert result_id in shape_results
+
+    print("POST /mcp/execute get_shape_description (Success) test passed (checked immediate response).")
+
+
+def test_mcp_execute_get_shape_description_nonexistent_result(client):
+    """Test get_shape_description with a result_id that doesn't exist via API."""
+    request_id = f"test-get-desc-no-result-{uuid.uuid4()}"
+    non_existent_result_id = "does-not-exist-desc-123"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_description", "arguments": {"result_id": non_existent_result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_description with non-existent result_id ({non_existent_result_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run and potentially fail
+    time.sleep(0.1)
+
+    assert non_existent_result_id not in shape_results
+
+    print("POST /mcp/execute get_shape_description with non-existent result_id test passed (checked immediate response).")
+
+
+def test_mcp_execute_get_shape_description_invalid_index(client, stored_build_result_id_for_handlers):
+    """Test get_shape_description with an invalid shape_index via API."""
+    result_id = stored_build_result_id_for_handlers
+    request_id = f"test-get-desc-bad-index-{uuid.uuid4()}"
+    invalid_shape_index = 999
+    request_body = {"request_id": request_id, "tool_name": "get_shape_description", "arguments": {"result_id": result_id, "shape_index": invalid_shape_index}}
+    print(f"\nTesting POST /mcp/execute get_shape_description with invalid shape_index ({invalid_shape_index})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    assert result_id in shape_results
+
+    print("POST /mcp/execute get_shape_description with invalid shape_index test passed (checked immediate response).")
+
+def test_mcp_execute_get_shape_description_failed_build(client):
+    """Test get_shape_description for a result_id corresponding to a failed build."""
+    # Re-use the failed build result creation from the properties test
+    script_fail = "import cadquery as cq\nresult = cq.Workplane('XY').box(1,1,0).edges('>Z').fillet(1)" # Fillet radius too large
+    build_res_fail = execute_cqgi_script(script_fail)
+    assert build_res_fail.success is False
+    failed_result_id = f"handler-test-fail-desc-{uuid.uuid4()}"
+    shape_results[failed_result_id] = build_res_fail
+    print(f"\nFixture: Created FAILED build result for description test with ID {failed_result_id}")
+
+    request_id = f"test-get-desc-fail-build-{uuid.uuid4()}"
+    request_body = {"request_id": request_id, "tool_name": "get_shape_description", "arguments": {"result_id": failed_result_id, "shape_index": 0}}
+    print(f"\nTesting POST /mcp/execute get_shape_description for failed build ({failed_result_id})...")
+
+    response = client.post("/mcp/execute", json=request_body)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing", "request_id": request_id}
+
+    # Allow time for the background task to run
+    time.sleep(0.1)
+
+    assert failed_result_id in shape_results
+
+    print("POST /mcp/execute get_shape_description for failed build test passed (checked immediate response).")
+
+print("POST /mcp/execute get_shape_description for failed build test passed (checked immediate response).")
+
+
 
 def test_mcp_execute_script_invalid_params_type(client):
     """Test execute script API with invalid 'parameters' type."""

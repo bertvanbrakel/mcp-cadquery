@@ -145,7 +145,9 @@ from src.mcp_cadquery_server.core import (
     export_shape_to_file,
     export_shape_to_svg_file,
     parse_docstring_metadata,
-    _substitute_parameters
+    _substitute_parameters,
+    get_shape_properties, # Added for validation tool
+    get_shape_description # Added for description tool
 )
 from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
@@ -324,6 +326,9 @@ def process_tool_request(request: dict) -> Optional[dict]:
             "export_shape_to_svg": handle_export_shape_to_svg,
             "scan_part_library": handle_scan_part_library,
             "search_parts": handle_search_parts,
+            "launch_cq_editor": handle_launch_cq_editor, # Added CQ-Editor launcher
+            "get_shape_properties": handle_get_shape_properties, # Added validation tool
+            "get_shape_description": handle_get_shape_description, # Added description tool
         }
         handler = tool_handlers.get(tool_name)
         if handler: result_message = handler(request)
@@ -543,6 +548,95 @@ def handle_search_parts(request: dict) -> dict:
         message = f"Found {len(final_results)} parts matching query '{query}'."; log.info(message)
         return {"success": True, "message": message, "results": final_results}
     except Exception as e: error_msg = f"Error during part search: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
+
+def handle_launch_cq_editor(request: dict) -> dict:
+    """
+    Handles the 'launch_cq_editor' tool request.
+    Launches the CQ-Editor application as a separate process.
+    """
+    request_id = request.get("request_id", "unknown")
+    log.info(f"Handling launch_cq_editor request (ID: {request_id})")
+    try:
+        # Use Popen to launch without waiting for it to exit
+        # Ensure CQ-editor is in the PATH (should be if installed in the venv)
+        log.info("Attempting to launch CQ-Editor...")
+        process = subprocess.Popen(["CQ-editor"]) # Use correct case
+        log.info(f"Launched CQ-Editor process with PID: {process.pid}")
+        return {"success": True, "message": f"CQ-Editor launched successfully (PID: {process.pid})."}
+    except FileNotFoundError: # This error might still occur if PATH is not set up correctly for the subprocess
+        error_msg = "Error: 'CQ-editor' command not found. Is CQ-Editor installed in the virtual environment and is the venv bin directory in the PATH?"
+        log.error(error_msg)
+        raise Exception(error_msg) # Raise to be caught by the main processor
+    except Exception as e:
+        error_msg = f"Error launching CQ-Editor: {e}"
+        log.error(error_msg, exc_info=True)
+        raise Exception(error_msg) # Raise to be caught by the main processor
+
+def handle_get_shape_properties(request: dict) -> dict:
+    """
+    Handles the 'get_shape_properties' tool request.
+    Retrieves a shape from a previous result and calculates its properties.
+    """
+    request_id = request.get("request_id", "unknown")
+    log.info(f"Handling get_shape_properties request (ID: {request_id})")
+    try:
+        args = request.get("arguments", {})
+        result_id = args.get("result_id")
+        shape_index = args.get("shape_index", 0)
+
+        if not result_id: raise ValueError("Missing 'result_id' argument.")
+        if not isinstance(shape_index, int) or shape_index < 0: raise ValueError("'shape_index' must be a non-negative integer.")
+
+        build_result = shape_results.get(result_id)
+        if not build_result: raise ValueError(f"Result ID '{result_id}' not found.")
+        if not build_result.success: raise ValueError(f"Result ID '{result_id}' corresponds to a failed build.")
+        if not build_result.results or shape_index >= len(build_result.results): raise ValueError(f"Invalid shape_index {shape_index} for result ID '{result_id}'.")
+
+        shape_to_analyze = build_result.results[shape_index].shape
+        log.info(f"Retrieved shape at index {shape_index} from result ID {result_id} for property analysis.")
+
+        # Call the core function
+        properties = get_shape_properties(shape_to_analyze)
+
+        return {"success": True, "message": f"Properties calculated for shape {shape_index} from result {result_id}.", "properties": properties}
+
+    except Exception as e:
+        error_msg = f"Error during shape property calculation handling: {e}"
+        log.error(error_msg, exc_info=True)
+        raise Exception(error_msg)
+
+def handle_get_shape_description(request: dict) -> dict:
+    """
+    Handles the 'get_shape_description' tool request.
+    Retrieves a shape from a previous result and generates its description.
+    """
+    request_id = request.get("request_id", "unknown")
+    log.info(f"Handling get_shape_description request (ID: {request_id})")
+    try:
+        args = request.get("arguments", {})
+        result_id = args.get("result_id")
+        shape_index = args.get("shape_index", 0)
+
+        if not result_id: raise ValueError("Missing 'result_id' argument.")
+        if not isinstance(shape_index, int) or shape_index < 0: raise ValueError("'shape_index' must be a non-negative integer.")
+
+        build_result = shape_results.get(result_id)
+        if not build_result: raise ValueError(f"Result ID '{result_id}' not found.")
+        if not build_result.success: raise ValueError(f"Result ID '{result_id}' corresponds to a failed build.")
+        if not build_result.results or shape_index >= len(build_result.results): raise ValueError(f"Invalid shape_index {shape_index} for result ID '{result_id}'.")
+
+        shape_to_describe = build_result.results[shape_index].shape
+        log.info(f"Retrieved shape at index {shape_index} from result ID {result_id} for description generation.")
+
+        # Call the core function
+        description = get_shape_description(shape_to_describe)
+
+        return {"success": True, "message": f"Description generated for shape {shape_index} from result {result_id}.", "description": description}
+
+    except Exception as e:
+        error_msg = f"Error during shape description generation handling: {e}"
+        log.error(error_msg, exc_info=True)
+        raise Exception(error_msg)
 
 async def run_stdio_mode() -> None:
     """Runs the server in stdio mode, reading JSON requests from stdin."""
