@@ -26,16 +26,28 @@ def parse_docstring_metadata(docstring: Optional[str]) -> Dict[str, Any]:
     Returns:
         A dictionary containing the parsed metadata.
     """
-    metadata = {};
+    metadata = {}
     if not docstring: return metadata
     lines = docstring.strip().split('\n')
     for line in lines:
-        line = line.strip(); match = re.match(r'^([\w\s]+):\s*(.*)$', line)
-        if match:
-            key = match.group(1).strip().lower().replace(' ', '_'); value = match.group(2).strip()
-            if key and value:
-                 if key == 'tags': metadata[key] = [tag.strip().lower() for tag in value.split(',') if tag.strip()]
-                 else: metadata[key] = value
+        line = line.strip()
+        if ':' in line:
+            parts = line.split(':', 1)
+            key_part = parts[0].strip()
+            value = parts[1].strip()
+            # Check if value is non-empty and original key_part doesn't contain spaces
+            # before converting to snake_case and checking isidentifier()
+            if value and ' ' not in key_part:
+                 key = key_part.lower() # No need for replace if no spaces
+                 if key.isidentifier():
+                     if key == 'tags':
+                         metadata[key] = [tag.strip().lower() for tag in value.split(',') if tag.strip()]
+                     else:
+                         metadata[key] = value
+            # Handle known multi-word keys explicitly (like 'Part Name')
+            elif value and key_part.lower() == "part name":
+                 metadata["part_name"] = value
+            # Add other known multi-word keys here if needed
     return metadata
 
 def execute_cqgi_script(script_content: str) -> cqgi.BuildResult:

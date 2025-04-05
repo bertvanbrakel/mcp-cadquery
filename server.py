@@ -154,13 +154,8 @@ from sse_starlette.sse import EventSourceResponse
 import cadquery as cq
 from cadquery import cqgi # Needed for type hints
 
-# --- Global App Instances (Defined after venv check) ---
-# Define app and cli globally so they can be imported by tests
-app = FastAPI()
-cli = typer.Typer()
-
 # --- Global State and Paths (Defaults) ---
-# These might be modified by the CLI command later
+# Define defaults before app/cli creation
 shape_results: Dict[str, cqgi.BuildResult] = {}
 part_index: Dict[str, Dict[str, Any]] = {}
 PART_LIBRARY_DIR = "part_library"
@@ -183,9 +178,121 @@ logging.basicConfig(
 log = logging.getLogger(__name__) # Get logger after config
 
 
+# --- FastAPI App and Route Definitions ---
+# Define app instance globally FIRST
+app = FastAPI()
+
+# Define static file configuration function
+def configure_static_files(app_instance: FastAPI, static_dir: str, render_dir_name: str, render_dir_path: str, preview_dir_name: str, preview_dir_path: str, assets_dir_path: str) -> None:
+    """
+    Configures FastAPI static file serving for frontend, renders, and previews.
+    NOTE: This function modifies the passed 'app_instance'.
+    """
+    log.info(f"Configuring static files. Base static dir: {static_dir}")
+
+    # Mount renders, previews, and assets if they exist
+    if os.path.isdir(render_dir_path):
+        app_instance.mount(f"/{render_dir_name}", StaticFiles(directory=render_dir_path), name=render_dir_name)
+        log.info(f"Mounted render directory '{render_dir_path}' at '/{render_dir_name}'")
+    else: log.warning(f"Render directory '{render_dir_path}' not found, skipping mount.")
+
+    if os.path.isdir(preview_dir_path):
+        app_instance.mount(f"/{preview_dir_name}", StaticFiles(directory=preview_dir_path), name=preview_dir_name)
+        log.info(f"Mounted preview directory '{preview_dir_path}' at '/{preview_dir_name}'")
+    else: log.warning(f"Preview directory '{preview_dir_path}' not found, skipping mount.")
+
+    # Remove explicit /assets mount; let the catch-all handle it if assets is inside static_dir
+    # if os.path.isdir(assets_dir_path):
+    #      app_instance.mount("/assets", StaticFiles(directory=assets_dir_path), name="assets")
+    #      log.info(f"Mounted assets directory '{assets_dir_path}' at '/assets'")
+    # elif os.path.isdir(os.path.join(static_dir, "assets")): # Check if assets is inside static_dir
+    #      app_instance.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+    #      log.info(f"Mounted assets directory '{os.path.join(static_dir, 'assets')}' at '/assets'")
+    # else: log.warning(f"Assets directory '{assets_dir_path}' not found, skipping mount.")
+
+
+    # Catch-all for SPA routing and serving other static files
+    # This needs to be defined *after* specific mounts
+    @app_instance.get("/{full_path:path}", response_model=None) # Disable response model generation
+    async def serve_static_or_index(request: Request, full_path: str) -> Union[FileResponse, Response, HTTPException]:
+        """Serves static files or index.html for SPA routing."""
+        log.debug(f"Catch-all route received request for full_path: '{full_path}'") # DEBUG LOG
+        # Prevent serving files outside the static directory
+        if ".." in full_path:
+            log.warning(f"Attempted directory traversal: '{full_path}'") # DEBUG LOG
+            return HTTPException(status_code=404, detail="Not Found")
+
+        file_path = os.path.join(static_dir, full_path)
+        log.debug(f"Checking for file at: '{file_path}'") # DEBUG LOG
+
+        # If the exact file exists, serve it
+        if os.path.isfile(file_path):
+            log.debug(f"Serving existing file: '{file_path}'") # DEBUG LOG
+            return FileResponse(file_path)
+
+        # If the file doesn't exist, check if it was a request for the root path
+        if full_path == "":
+            log.debug("Request is for root path, but file not found directly. Checking for index.html") # DEBUG LOG
+            root_index = os.path.join(static_dir, "index.html")
+            if os.path.isfile(root_index):
+                log.debug(f"Serving index.html from: '{root_index}'") # DEBUG LOG
+                return FileResponse(root_index)
+            else:
+                # Root path requested, but neither file_path nor index.html exists
+                log.warning(f"Root path requested but index.html not found at '{root_index}'") # DEBUG LOG
+                return HTTPException(status_code=404, detail="Index not found")
+        else:
+            # File doesn't exist and it wasn't the root path, raise 404
+            log.debug(f"Path '{full_path}' not found as file, raising 404.") # DEBUG LOG
+            raise HTTPException(status_code=404, detail="Not Found")
+
+# Configure static files immediately using default paths
+# Call the configuration function (which now excludes the catch-all)
+configure_static_files(app, STATIC_DIR, RENDER_DIR_NAME, RENDER_DIR_PATH, PART_PREVIEW_DIR_NAME, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
+
+# Define other routes
+@app.get("/mcp")
+async def mcp_sse_endpoint(request: Request) -> EventSourceResponse:
+    """Handles SSE connections, keeping track of clients and pushing messages."""
+    queue = asyncio.Queue()
+    sse_connections.append(queue)
+    client_host = request.client.host if request.client else "unknown"
+    log.info(f"New SSE connection established from {client_host}. Total connections: {len(sse_connections)}")
+    async def event_generator():
+        try:
+            while True:
+                message = await queue.get()
+                if message is None: break
+                yield {"event": "mcp_message", "data": json.dumps(message)}
+                queue.task_done()
+        except asyncio.CancelledError: log.info(f"SSE connection from {client_host} cancelled/closed by client.")
+        except Exception as e: log.error(f"Error in SSE event generator for {client_host}: {e}", exc_info=True)
+        finally:
+            if queue in sse_connections: sse_connections.remove(queue)
+            log.info(f"SSE connection from {client_host} closed. Remaining connections: {len(sse_connections)}")
+    return EventSourceResponse(event_generator())
+
+@app.post("/mcp/execute")
+async def execute_tool_endpoint(request_body: dict = Body(...)) -> dict:
+    """
+    FastAPI endpoint to receive tool execution requests via POST.
+
+    Validates the request, schedules the processing in the background,
+    and returns an immediate 'processing' status.
+    """
+    request_id = request_body.get("request_id", "unknown")
+    tool_name = request_body.get("tool_name")
+    log.info(f"Received execution request via POST (ID: {request_id}, Tool: {tool_name})")
+    if not tool_name:
+         log.error("Received execution request without tool_name.")
+         raise HTTPException(status_code=400, detail="Missing 'tool_name' in request body")
+    asyncio.create_task(_process_and_push(request_body)) # Uses helper defined below
+    return {"status": "processing", "request_id": request_id}
+
+
 # --- Core Application Logic Functions ---
-# (SSE, Tool Processing, Handlers, Static Files, Stdio Mode)
-# These functions use the globally defined app, cli, state, paths
+# (SSE Helper, Tool Processing, Handlers, Stdio Mode)
+# These functions use the globally defined app, state, paths
 
 async def push_sse_message(message_data: dict) -> None:
     """Pushes a message dictionary to all connected SSE clients."""
@@ -194,6 +301,11 @@ async def push_sse_message(message_data: dict) -> None:
     for queue in sse_connections:
         try: await queue.put(message_data)
         except Exception as e: log.error(f"Failed to push message to a queue: {e}")
+
+async def _process_and_push(request: dict) -> None:
+    """Helper coroutine to process a tool request and push the result via SSE."""
+    message_to_push = process_tool_request(request)
+    await push_sse_message(message_to_push)
 
 def process_tool_request(request: dict) -> Optional[dict]:
     """
@@ -432,52 +544,6 @@ def handle_search_parts(request: dict) -> dict:
         return {"success": True, "message": message, "results": final_results}
     except Exception as e: error_msg = f"Error during part search: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
 
-def configure_static_files(static_dir: str, render_dir_name: str, render_dir_path: str, preview_dir_name: str, preview_dir_path: str, assets_dir_path: str) -> None:
-    """
-    Configures FastAPI static file serving for frontend, renders, and previews.
-    """
-    log.info(f"Configuring static files. Base static dir: {static_dir}")
-
-    # Mount renders, previews, and assets if they exist
-    if os.path.isdir(render_dir_path):
-        app.mount(f"/{render_dir_name}", StaticFiles(directory=render_dir_path), name=render_dir_name)
-        log.info(f"Mounted render directory '{render_dir_path}' at '/{render_dir_name}'")
-    else: log.warning(f"Render directory '{render_dir_path}' not found, skipping mount.")
-
-    if os.path.isdir(preview_dir_path):
-        app.mount(f"/{preview_dir_name}", StaticFiles(directory=preview_dir_path), name=preview_dir_name)
-        log.info(f"Mounted preview directory '{preview_dir_path}' at '/{preview_dir_name}'")
-    else: log.warning(f"Preview directory '{preview_dir_path}' not found, skipping mount.")
-
-    if os.path.isdir(assets_dir_path):
-         app.mount("/assets", StaticFiles(directory=assets_dir_path), name="assets")
-         log.info(f"Mounted assets directory '{assets_dir_path}' at '/assets'")
-    elif os.path.isdir(os.path.join(static_dir, "assets")): # Check if assets is inside static_dir
-         app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
-         log.info(f"Mounted assets directory '{os.path.join(static_dir, 'assets')}' at '/assets'")
-    else: log.warning(f"Assets directory '{assets_dir_path}' not found, skipping mount.")
-
-
-    # Catch-all for SPA routing and serving other static files
-    # This needs to be defined *after* specific mounts
-    @app.get("/{full_path:path}")
-    async def serve_static_or_index(request: Request, full_path: str) -> Union[FileResponse, Response, HTTPException]:
-        """Serves static files or index.html for SPA routing."""
-        # Prevent serving files outside the static directory
-        if ".." in full_path: return HTTPException(status_code=404, detail="Not Found")
-
-        file_path = os.path.join(static_dir, full_path)
-        # Check if it's a directory; if so, try serving index.html from there
-        if os.path.isdir(file_path): index_path = os.path.join(file_path, "index.html")
-        else: index_path = None
-
-        if index_path and os.path.isfile(index_path): return FileResponse(index_path)
-        elif os.path.isfile(file_path): return FileResponse(file_path)
-        else: # Fallback to root index.html for SPA routing
-            root_index = os.path.join(static_dir, "index.html")
-            if os.path.isfile(root_index): return FileResponse(root_index)
-            else: return HTTPException(status_code=404, detail="Not Found")
-
 async def run_stdio_mode() -> None:
     """Runs the server in stdio mode, reading JSON requests from stdin."""
     log.info("Starting server in Stdio mode. Reading from stdin...")
@@ -511,54 +577,11 @@ async def run_stdio_mode() -> None:
         except Exception as e: log.error(f"Unexpected error in stdio loop: {e}", exc_info=True); await asyncio.sleep(1)
 
 
-# --- FastAPI Route Definitions ---
-# Define routes using the global 'app' instance
+# --- Typer CLI App Definition ---
+# Define the Typer app globally
+cli = typer.Typer()
 
-@app.get("/mcp")
-async def mcp_sse_endpoint(request: Request) -> EventSourceResponse:
-    """Handles SSE connections, keeping track of clients and pushing messages."""
-    queue = asyncio.Queue()
-    sse_connections.append(queue)
-    client_host = request.client.host if request.client else "unknown"
-    log.info(f"New SSE connection established from {client_host}. Total connections: {len(sse_connections)}")
-    async def event_generator():
-        try:
-            while True:
-                message = await queue.get()
-                if message is None: break
-                yield {"event": "mcp_message", "data": json.dumps(message)}
-                queue.task_done()
-        except asyncio.CancelledError: log.info(f"SSE connection from {client_host} cancelled/closed by client.")
-        except Exception as e: log.error(f"Error in SSE event generator for {client_host}: {e}", exc_info=True)
-        finally:
-            if queue in sse_connections: sse_connections.remove(queue)
-            log.info(f"SSE connection from {client_host} closed. Remaining connections: {len(sse_connections)}")
-    return EventSourceResponse(event_generator())
-
-async def _process_and_push(request: dict) -> None:
-    """Helper coroutine to process a tool request and push the result via SSE."""
-    message_to_push = process_tool_request(request)
-    await push_sse_message(message_to_push)
-
-@app.post("/mcp/execute")
-async def execute_tool_endpoint(request_body: dict = Body(...)) -> dict:
-    """
-    FastAPI endpoint to receive tool execution requests via POST.
-
-    Validates the request, schedules the processing in the background,
-    and returns an immediate 'processing' status.
-    """
-    request_id = request_body.get("request_id", "unknown")
-    tool_name = request_body.get("tool_name")
-    log.info(f"Received execution request via POST (ID: {request_id}, Tool: {tool_name})")
-    if not tool_name:
-         log.error("Received execution request without tool_name.")
-         raise HTTPException(status_code=400, detail="Missing 'tool_name' in request body")
-    asyncio.create_task(_process_and_push(request_body))
-    return {"status": "processing", "request_id": request_id}
-
-
-# --- Typer Command ---
+# Define the main command using the global cli
 @cli.command()
 def main(
     mode: str = typer.Option("sse", "--mode", help="Server mode ('stdio' or 'sse')."),
@@ -571,31 +594,20 @@ def main(
     render_dir_name: str = typer.Option(RENDER_DIR_NAME, "--render-dir-name", help="Subdirectory name within static-dir for renders."), # Use initial default
 ):
     """Runs the CadQuery MCP Server."""
-    # Non-local allows modification of variables defined in the outer scope (initialize_and_run_app)
-    # Need to redefine these here or pass them in, as they are not truly global anymore
-    # Let's redefine them based on the arguments for clarity within this scope
-    current_part_library_dir = os.path.abspath(library_dir)
-    current_static_dir = os.path.abspath(static_dir)
-    current_preview_dir_name = preview_dir_name
-    current_render_dir_name = render_dir_name
-
-    # Recalculate full paths based on CLI args for this run
-    current_render_dir_path = os.path.join(current_static_dir, current_render_dir_name)
-    current_preview_dir_path = os.path.join(current_static_dir, current_preview_dir_name)
-    current_assets_dir_path = os.path.join(current_static_dir, "assets") # Assuming assets is always 'assets'
-
-    # Update the module-level variables used by handlers (this is a bit awkward)
-    # A class-based approach might encapsulate this better later
+    # Update the global path variables based on CLI options
+    # This allows handlers to access the correct paths
     global PART_LIBRARY_DIR, STATIC_DIR, PART_PREVIEW_DIR_NAME, RENDER_DIR_NAME
     global RENDER_DIR_PATH, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH
-    PART_LIBRARY_DIR = current_part_library_dir
-    STATIC_DIR = current_static_dir
-    PART_PREVIEW_DIR_NAME = current_preview_dir_name
-    RENDER_DIR_NAME = current_render_dir_name
-    RENDER_DIR_PATH = current_render_dir_path
-    PART_PREVIEW_DIR_PATH = current_preview_dir_path
-    ASSETS_DIR_PATH = current_assets_dir_path
 
+    PART_LIBRARY_DIR = os.path.abspath(library_dir)
+    STATIC_DIR = os.path.abspath(static_dir)
+    PART_PREVIEW_DIR_NAME = preview_dir_name
+    RENDER_DIR_NAME = render_dir_name
+
+    # Recalculate full paths based on CLI args for this run
+    RENDER_DIR_PATH = os.path.join(STATIC_DIR, RENDER_DIR_NAME)
+    PART_PREVIEW_DIR_PATH = os.path.join(STATIC_DIR, PART_PREVIEW_DIR_NAME)
+    ASSETS_DIR_PATH = os.path.join(STATIC_DIR, "assets") # Assuming assets is always 'assets'
 
     log.info(f"Using Part Library: {PART_LIBRARY_DIR}"); log.info(f"Using Static Dir: {STATIC_DIR}")
     log.info(f"Using Preview Dir: {PART_PREVIEW_DIR_PATH} (mounted at /{PART_PREVIEW_DIR_NAME})")
@@ -603,6 +615,10 @@ def main(
 
     # Ensure directories exist (important after paths might have changed)
     os.makedirs(RENDER_DIR_PATH, exist_ok=True); os.makedirs(PART_PREVIEW_DIR_PATH, exist_ok=True)
+
+    # Re-configure static files if paths changed via CLI (only relevant for SSE mode)
+    if mode == "sse":
+        configure_static_files(app, STATIC_DIR, RENDER_DIR_NAME, RENDER_DIR_PATH, PART_PREVIEW_DIR_NAME, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
 
     # --- Mode Execution ---
     if mode == "stdio":
@@ -615,8 +631,6 @@ def main(
         # raise typer.Exit() # Exit after stdio mode finishes - Typer might handle this?
     elif mode == "sse":
          # --- HTTP Mode Execution ---
-        # Configure static files *before* running uvicorn
-        configure_static_files(STATIC_DIR, RENDER_DIR_NAME, RENDER_DIR_PATH, PART_PREVIEW_DIR_NAME, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
         log.info("Performing initial scan of part library...");
         try: handle_scan_part_library({"request_id": "startup-scan", "arguments": {}})
         except Exception as e: log.error(f"Initial part library scan failed: {e}", exc_info=True)
@@ -631,6 +645,5 @@ def main(
 if __name__ == "__main__":
     # This block runs regardless of whether we are in the venv or not initially.
     # If not in venv, the re-exec happens above.
-    # If in venv (or after re-exec), this calls the main app logic function.
-    # initialize_and_run_app() # This was incorrect, Typer needs to run the command
-    cli() # Run the Typer app
+    # If in venv (or after re-exec), this runs the Typer CLI.
+    cli()
