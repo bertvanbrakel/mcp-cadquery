@@ -317,14 +317,14 @@ def handle_export_shape_to_svg(request) -> dict: # Renamed function
         # --- Input Validation ---
         if not result_id:
             raise ValueError("Missing 'result_id' argument.")
-        if not filename:
-            # filename validation happens above with basename
-            pass
+        # Removed faulty check for unassigned 'filename' variable
+        # base_filename is guaranteed due to default value in os.path.basename call
         # Validation for base_filename happens above
         if not isinstance(shape_index, int) or shape_index < 0:
              raise ValueError("'shape_index' must be a non-negative integer.")
-        if not isinstance(render_options, dict):
-             raise ValueError("'options' argument must be a dictionary (JSON object).") # Keep this check
+        # Check the original options dict from args, not the merged svg_opts
+        if not isinstance(export_options, dict):
+             raise ValueError("'options' argument must be a dictionary (JSON object).")
 
         # --- Retrieve Shape ---
         build_result = shape_results.get(result_id)
