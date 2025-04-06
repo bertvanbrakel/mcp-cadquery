@@ -2,6 +2,7 @@ cadquery==2.5.2
 fastapi
 uvicorn[standard]
 sse-starlette
+requests
 pytest
 typer # Added typer for CLI
 httpx # Added for FastAPI TestClient

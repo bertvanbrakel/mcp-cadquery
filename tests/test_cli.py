@@ -38,9 +38,9 @@ def test_cli_help():
     assert "Usage: server.py [OPTIONS]" in result.stdout # Check usage line (Typer uses script name here)
     assert "--host" in result.stdout
     assert "--port" in result.stdout
-    assert "--reload" in result.stdout
-    assert "--mode" in result.stdout # Check for the new mode flag
-    assert "--library-dir" in result.stdout
+    # assert "--reload" in result.stdout # Removed as --reload is no longer a direct CLI arg handled in main
+    # assert "--mode" in result.stdout # Removed as --mode is no longer a direct CLI arg
+    assert "--part-library-dir" in result.stdout # Corrected option name
     assert "--static-dir" in result.stdout
     print("CLI --help test passed.")
 
@@ -49,22 +49,22 @@ def test_cli_stdio_invocation():
     # Running stdio mode expects input and hangs if none provided.
     # We can send a minimal JSON request and check if it processes without crashing.
     # Or just check if it starts without immediate error.
-    # Let's check for startup message and maybe timeout.
+    # Let's check if it starts without immediate error by using the --stdio flag.
+    # It should hang waiting for input, so we expect a timeout.
     try:
         # Timeout after a short period, assuming it started okay if no crash
-        result = run_server_cli(["--mode", "stdio"], timeout=5)
-        # If it exits cleanly (e.g., on EOF if stdin closes), code 0 is okay.
-        # If it times out, it means it was running, which is also okay for this test.
+        print("Running CLI command with --stdio, expecting timeout...")
+        result = run_server_cli(["--stdio"], timeout=3) # Use --stdio flag, shorter timeout
+        # If it *doesn't* timeout and exits, something is wrong.
         print(f"Exit Code: {result.returncode}")
         print(f"Stdout:\n{result.stdout}")
-        print(f"Stderr:\n{result.stderr}")
-        assert result.returncode == 0 # Or handle timeout below
-        assert "Starting server in Stdio mode" in result.stderr # Check log message
+        print(f"Stderr:\n{result.stderr}") # Log stderr in case of unexpected exit
+        pytest.fail(f"CLI --stdio invocation exited unexpectedly with code {result.returncode}")
     except subprocess.TimeoutExpired:
-        print("CLI --mode stdio invocation timed out (expected for running server). Test passes.")
+        print("CLI --stdio invocation timed out (expected behavior). Test passes.")
         pass # Timeout is expected for a running server waiting for input
     except Exception as e:
-        pytest.fail(f"CLI --mode stdio invocation failed unexpectedly: {e}")
+        pytest.fail(f"CLI --stdio invocation failed unexpectedly: {e}")
 
     print("CLI --mode stdio invocation test passed.")
 
@@ -77,7 +77,7 @@ def test_cli_sse_invocation_help():
     print(f"Stderr:\n{result.stderr}")
     assert result.returncode == 0
     assert "Usage: server.py [OPTIONS]" in result.stdout
-    assert "[default: sse]" in result.stdout # Check default mode help text
+    # assert "[default: sse]" in result.stdout # Removed check as --mode is gone
     print("CLI --mode sse (default) --help test passed.")
 
 # Add more specific CLI tests if needed, e.g., passing invalid args

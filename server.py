@@ -156,17 +156,24 @@ from sse_starlette.sse import EventSourceResponse
 import cadquery as cq
 from cadquery import cqgi # Needed for type hints
 
-# --- Global State and Paths (Defaults) ---
-# Define defaults before app/cli creation
+# --- Global State and Paths (Defaults & Placeholders) ---
 shape_results: Dict[str, cqgi.BuildResult] = {}
 part_index: Dict[str, Dict[str, Any]] = {}
-PART_LIBRARY_DIR = "part_library"
-RENDER_DIR_NAME = "renders"
-PART_PREVIEW_DIR_NAME = "part_previews"
-STATIC_DIR = os.path.abspath(os.path.join(_SCRIPT_DIR, "frontend/dist")) # Use _SCRIPT_DIR from top level
-RENDER_DIR_PATH = os.path.join(STATIC_DIR, RENDER_DIR_NAME)
-PART_PREVIEW_DIR_PATH = os.path.join(STATIC_DIR, PART_PREVIEW_DIR_NAME)
-ASSETS_DIR_PATH = os.path.join(STATIC_DIR, "assets")
+
+# Default names/relative paths (can be overridden by CLI)
+DEFAULT_PART_LIBRARY_DIR = "part_library"
+DEFAULT_OUTPUT_DIR_NAME = "shapes"
+DEFAULT_RENDER_DIR_NAME = "renders" # Subdir within output dir
+DEFAULT_PART_PREVIEW_DIR_NAME = "part_previews" # Subdir within output dir
+
+# These will be dynamically set in main() based on CLI args or defaults
+PART_LIBRARY_DIR: str = "" # Absolute path to part library (input)
+OUTPUT_DIR_PATH: str = "" # Absolute path to the main output dir
+RENDER_DIR_PATH: str = "" # Absolute path to the render subdir
+PART_PREVIEW_DIR_PATH: str = "" # Absolute path to the preview subdir
+STATIC_DIR: Optional[str] = None # Absolute path to static dir (optional)
+ASSETS_DIR_PATH: Optional[str] = None # Absolute path to assets dir (optional)
+
 sse_connections: List[asyncio.Queue] = []
 
 # --- Logging Setup (Application Level) ---
@@ -203,16 +210,6 @@ def configure_static_files(app_instance: FastAPI, static_dir: str, render_dir_na
         log.info(f"Mounted preview directory '{preview_dir_path}' at '/{preview_dir_name}'")
     else: log.warning(f"Preview directory '{preview_dir_path}' not found, skipping mount.")
 
-    # Remove explicit /assets mount; let the catch-all handle it if assets is inside static_dir
-    # if os.path.isdir(assets_dir_path):
-    #      app_instance.mount("/assets", StaticFiles(directory=assets_dir_path), name="assets")
-    #      log.info(f"Mounted assets directory '{assets_dir_path}' at '/assets'")
-    # elif os.path.isdir(os.path.join(static_dir, "assets")): # Check if assets is inside static_dir
-    #      app_instance.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
-    #      log.info(f"Mounted assets directory '{os.path.join(static_dir, 'assets')}' at '/assets'")
-    # else: log.warning(f"Assets directory '{assets_dir_path}' not found, skipping mount.")
-
-
     # Catch-all for SPA routing and serving other static files
     # This needs to be defined *after* specific mounts
     @app_instance.get("/{full_path:path}", response_model=None) # Disable response model generation
@@ -248,9 +245,7 @@ def configure_static_files(app_instance: FastAPI, static_dir: str, render_dir_na
             log.debug(f"Path '{full_path}' not found as file, raising 404.") # DEBUG LOG
             raise HTTPException(status_code=404, detail="Not Found")
 
-# Configure static files immediately using default paths
-# Call the configuration function (which now excludes the catch-all)
-configure_static_files(app, STATIC_DIR, RENDER_DIR_NAME, RENDER_DIR_PATH, PART_PREVIEW_DIR_NAME, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
+# Static file configuration happens inside main() if static_dir is provided
 
 # Define other routes
 @app.get("/mcp")
@@ -417,23 +412,52 @@ def handle_export_shape(request: dict) -> dict:
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling export_shape request (ID: {request_id})")
     try:
-        args = request.get("arguments", {}); result_id = args.get("result_id"); shape_index = args.get("shape_index", 0)
-        filename = args.get("filename"); export_format = args.get("format"); export_options = args.get("options", {})
+        args = request.get("arguments", {})
+        result_id = args.get("result_id")
+        shape_index = args.get("shape_index", 0)
+        filename_arg = args.get("filename") # Get the argument provided by the user
+        export_format = args.get("format")
+        export_options = args.get("options", {})
+
         if not result_id: raise ValueError("Missing 'result_id' argument.")
-        if not filename: raise ValueError("Missing 'filename' argument.")
+        if not filename_arg: raise ValueError("Missing 'filename' argument.")
         if not isinstance(shape_index, int) or shape_index < 0: raise ValueError("'shape_index' must be a non-negative integer.")
         if not isinstance(export_options, dict): raise ValueError("'options' argument must be a dictionary.")
+
         build_result = shape_results.get(result_id)
         if not build_result: raise ValueError(f"Result ID '{result_id}' not found.")
         if not build_result.success: raise ValueError(f"Result ID '{result_id}' corresponds to a failed build.")
         if not build_result.results or shape_index >= len(build_result.results): raise ValueError(f"Invalid shape_index {shape_index} for result ID '{result_id}'.")
+
         shape_to_export = build_result.results[shape_index].shape
         log.info(f"Retrieved shape at index {shape_index} from result ID {result_id}.")
-        log.info(f"Attempting to export shape to '{filename}' (Format: {export_format or 'Infer'}, Options: {export_options})")
-        # Call the core export function
-        export_shape_to_file(shape_to_export, filename, export_format, export_options)
-        log.info(f"Shape successfully exported via export_shape_to_file to '{filename}'.")
-        return {"success": True, "message": f"Shape successfully exported to {filename}.", "filename": filename}
+
+        # Determine final output path based on filename_arg and OUTPUT_DIR_PATH (set in main)
+        output_path: str
+        # Check if filename_arg looks like a path (absolute or contains separator)
+        if os.path.isabs(filename_arg) or os.path.sep in filename_arg or (os.altsep and os.altsep in filename_arg):
+            # If filename is absolute or contains a directory path, use it directly
+            output_path = os.path.abspath(filename_arg) # Ensure absolute path
+            log.info(f"Using provided path for export: '{output_path}'")
+        else:
+            # If filename is just a name, prepend the configured output directory
+            # OUTPUT_DIR_PATH should be set and absolute by the time a handler is called
+            if not OUTPUT_DIR_PATH:
+                 raise RuntimeError("OUTPUT_DIR_PATH is not configured. Cannot export relative filename.")
+            output_path = os.path.join(OUTPUT_DIR_PATH, filename_arg)
+            log.info(f"Using configured output directory. Exporting to: '{output_path}'")
+
+        # Ensure the target directory exists
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+             os.makedirs(output_dir, exist_ok=True)
+
+        log.info(f"Attempting to export shape to '{output_path}' (Format: {export_format or 'Infer'}, Options: {export_options})")
+        # Call the core export function with the calculated absolute path
+        export_shape_to_file(shape_to_export, output_path, export_format, export_options)
+        log.info(f"Shape successfully exported via export_shape_to_file to '{output_path}'.")
+        # Return the final absolute path
+        return {"success": True, "message": f"Shape successfully exported to {output_path}.", "filename": output_path}
     except Exception as e: error_msg = f"Error during shape export handling: {e}"; log.error(error_msg, exc_info=True); raise Exception(error_msg)
 
 def handle_export_shape_to_svg(request: dict) -> dict:
@@ -457,8 +481,14 @@ def handle_export_shape_to_svg(request: dict) -> dict:
         if not build_result.results or shape_index >= len(build_result.results): raise ValueError(f"Invalid shape_index {shape_index} for result ID '{result_id}'.")
         shape_result_obj = build_result.results[shape_index].shape
         log.info(f"Retrieved shape object at index {shape_index} from result ID {result_id}.")
-        # Use RENDER_DIR_PATH which is calculated based on CLI args or defaults
-        output_path = os.path.join(RENDER_DIR_PATH, base_filename); output_url = f"/{RENDER_DIR_NAME}/{base_filename}"
+        # Use RENDER_DIR_PATH which is now set globally in main()
+        if not RENDER_DIR_PATH:
+             raise RuntimeError("RENDER_DIR_PATH is not configured. Cannot export SVG.")
+        output_path = os.path.join(RENDER_DIR_PATH, base_filename)
+        # Generate URL relative to the *optional* static dir serving root
+        # If static dir is not served, this URL might not be directly useful
+        render_dir_basename = os.path.basename(RENDER_DIR_PATH) # e.g., "renders"
+        output_url = f"/{render_dir_basename}/{base_filename}"
         svg_opts = {"width": 400, "height": 300, "marginLeft": 10, "marginTop": 10, "showAxes": False, "projectionDir": (0.5, 0.5, 0.5), "strokeWidth": 0.25, "strokeColor": (0, 0, 0), "hiddenColor": (0, 0, 255, 100), "showHidden": False}
         svg_opts.update(export_options)
         # Call core SVG export function
@@ -473,8 +503,14 @@ def handle_scan_part_library(request: dict) -> dict:
     """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling scan_part_library request (ID: {request_id})")
-    # Use paths calculated based on CLI args or defaults
-    library_path = os.path.abspath(PART_LIBRARY_DIR); preview_dir_path = PART_PREVIEW_DIR_PATH; preview_dir_url = f"/{PART_PREVIEW_DIR_NAME}"
+    # Use paths now set globally in main()
+    library_path = PART_LIBRARY_DIR # Use the global absolute path
+    preview_dir_path = PART_PREVIEW_DIR_PATH # Use the global absolute path
+    if not library_path or not preview_dir_path:
+         raise RuntimeError("PART_LIBRARY_DIR or PART_PREVIEW_DIR_PATH is not configured.")
+    preview_dir_basename = os.path.basename(PART_PREVIEW_DIR_PATH) # e.g., "part_previews"
+    preview_dir_url = f"/{preview_dir_basename}" # URL relative to static root (if served)
+
     if not os.path.isdir(library_path): raise ValueError(f"Part library directory not found: {library_path}")
     scanned_count, indexed_count, updated_count, cached_count, error_count = 0, 0, 0, 0, 0
     found_parts = set(); default_svg_opts = {"width": 150, "height": 100, "showAxes": False}
@@ -502,30 +538,21 @@ def handle_scan_part_library(request: dict) -> dict:
                     else: indexed_count += 1
                     part_index[part_name] = part_data; log.info(f"Successfully indexed/updated part: {part_name}")
                 elif not build_result.results: log.warning(f"Part script {filename} executed successfully but produced no results. Skipping indexing."); error_count += 1
-                else: # Handle build failure
-                     log.warning(f"Part script {filename} failed execution: {build_result.exception}. Skipping indexing.")
-                     error_count += 1
-            except SyntaxError as e: error_msg = f"Syntax error parsing {filename}: {e}"; error_count += 1
-            except Exception as e: error_msg = f"Error processing {filename}: {e}"; error_count += 1
-            if error_msg: log.error(error_msg, exc_info=True)
-    removed_count = 0; indexed_parts = set(part_index.keys()); parts_to_remove = indexed_parts - found_parts
-    for part_name_to_remove in parts_to_remove:
-        log.info(f"Removing deleted part from index: {part_name_to_remove}")
-        removed_data = part_index.pop(part_name_to_remove, None)
-        if removed_data and 'preview_url' in removed_data:
-            preview_filename = os.path.basename(removed_data['preview_url']); preview_file_path = os.path.join(PART_PREVIEW_DIR_PATH, preview_filename)
-            if os.path.exists(preview_file_path):
-                try: os.remove(preview_file_path); log.info(f"Removed preview file: {preview_file_path}")
-                except OSError as e: log.error(f"Error removing preview file {preview_file_path}: {e}")
-        removed_count += 1
-    summary_msg = (f"Scan complete. Scanned: {scanned_count}, Newly Indexed: {indexed_count}, "
-                   f"Updated: {updated_count}, Cached: {cached_count}, Removed: {removed_count}, Errors: {error_count}.")
-    log.info(summary_msg)
-    return { "success": True, "message": summary_msg, "scanned": scanned_count, "indexed": indexed_count, "updated": updated_count, "cached": cached_count, "removed": removed_count, "errors": error_count }
+                else: error_msg = f"Execution failed: {build_result.exception}"; log.warning(f"Part script {filename} failed: {error_msg}"); error_count += 1
+            except Exception as e: error_msg = f"Error processing {filename}: {e}"; log.error(error_msg, exc_info=True); error_count += 1
+            if error_msg and part_name in part_index: del part_index[part_name]; log.info(f"Removed previously indexed part {part_name} due to error.")
+    # Remove parts from index that are no longer found in the directory
+    removed_count = 0
+    for part_name in list(part_index.keys()):
+        if part_name not in found_parts: del part_index[part_name]; removed_count += 1; log.info(f"Removed part '{part_name}' from index (file deleted).")
+    message = f"Part library scan complete. Scanned: {scanned_count}, Indexed: {indexed_count}, Updated: {updated_count}, Cached: {cached_count}, Removed: {removed_count}, Errors: {error_count}."
+    log.info(message)
+    return {"success": True, "message": message, "indexed_count": indexed_count, "updated_count": updated_count, "cached_count": cached_count, "removed_count": removed_count, "error_count": error_count}
 
 def handle_search_parts(request: dict) -> dict:
     """
-    Handles the 'search_parts' tool request. Searches the in-memory part index.
+    Handles the 'search_parts' tool request.
+    Searches the in-memory part index based on keywords.
     """
     request_id = request.get("request_id", "unknown")
     log.info(f"Handling search_parts request (ID: {request_id})")
@@ -678,64 +705,101 @@ cli = typer.Typer()
 # Define the main command using the global cli
 @cli.command()
 def main(
-    mode: str = typer.Option("sse", "--mode", help="Server mode ('stdio' or 'sse')."),
-    host: str = typer.Option("0.0.0.0", help="Host to bind the server to."),
+    host: str = typer.Option("127.0.0.1", help="Host to bind the server to."),
     port: int = typer.Option(8000, help="Port to run the server on."),
-    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development."),
-    library_dir: str = typer.Option(PART_LIBRARY_DIR, "--library-dir", "-l", help="Path to the CadQuery part library directory."), # Use initial default
-    static_dir: str = typer.Option(STATIC_DIR, "--static-dir", "-s", help="Path to the static files directory (frontend build)."), # Use initial default
-    preview_dir_name: str = typer.Option(PART_PREVIEW_DIR_NAME, "--preview-dir-name", help="Subdirectory name within static-dir for part previews."), # Use initial default
-    render_dir_name: str = typer.Option(RENDER_DIR_NAME, "--render-dir-name", help="Subdirectory name within static-dir for renders."), # Use initial default
+    output_dir: str = typer.Option(
+        DEFAULT_OUTPUT_DIR_NAME, # Use the default name constant
+        "--output-dir", "-o",
+        help=f"Path to the directory for saving exported shapes, renders, and previews. Defaults to './{DEFAULT_OUTPUT_DIR_NAME}'.",
+        envvar="MCP_OUTPUT_DIR"
+    ),
+    part_lib_dir: str = typer.Option(
+        DEFAULT_PART_LIBRARY_DIR, # Use the default name constant
+        "--part-library-dir", "-l",
+        help=f"Path to the directory containing CadQuery part scripts. Defaults to './{DEFAULT_PART_LIBRARY_DIR}'.",
+        envvar="MCP_PART_LIB_DIR"
+    ),
+    # These options define the *names* of the subdirectories within the main output_dir
+    render_dir_name: str = typer.Option(DEFAULT_RENDER_DIR_NAME, "--render-dir-name", help=f"Subdirectory name within output-dir for renders. Defaults to '{DEFAULT_RENDER_DIR_NAME}'."),
+    preview_dir_name: str = typer.Option(DEFAULT_PART_PREVIEW_DIR_NAME, "--preview-dir-name", help=f"Subdirectory name within output-dir for part previews. Defaults to '{DEFAULT_PART_PREVIEW_DIR_NAME}'."),
+    static_dir_arg: Optional[str] = typer.Option( # Rename to avoid conflict with global
+        None, # Default to None
+        "--static-dir", "-s",
+        help="Path to the static directory for serving a frontend (e.g., frontend/dist). If not provided, frontend serving is disabled.",
+        envvar="MCP_STATIC_DIR"
+    ),
+    stdio: bool = typer.Option(False, "--stdio", help="Run in stdio mode instead of HTTP server.")
 ):
-    """Runs the CadQuery MCP Server."""
-    # Update the global path variables based on CLI options
-    # This allows handlers to access the correct paths
-    global PART_LIBRARY_DIR, STATIC_DIR, PART_PREVIEW_DIR_NAME, RENDER_DIR_NAME
-    global RENDER_DIR_PATH, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH
+    """Main function to start the MCP CadQuery server."""
+    # Use global keyword to modify global path variables
+    global PART_LIBRARY_DIR, OUTPUT_DIR_PATH, RENDER_DIR_PATH, PART_PREVIEW_DIR_PATH
+    global STATIC_DIR, ASSETS_DIR_PATH
 
-    PART_LIBRARY_DIR = os.path.abspath(library_dir)
-    STATIC_DIR = os.path.abspath(static_dir)
-    PART_PREVIEW_DIR_NAME = preview_dir_name
-    RENDER_DIR_NAME = render_dir_name
+    # --- Determine and Set Absolute Paths ---
+    # Output Directory (Core) - Ensure it's absolute
+    OUTPUT_DIR_PATH = os.path.abspath(output_dir)
+    log.info(f"Using main output directory: {OUTPUT_DIR_PATH}")
 
-    # Recalculate full paths based on CLI args for this run
-    RENDER_DIR_PATH = os.path.join(STATIC_DIR, RENDER_DIR_NAME)
-    PART_PREVIEW_DIR_PATH = os.path.join(STATIC_DIR, PART_PREVIEW_DIR_NAME)
-    ASSETS_DIR_PATH = os.path.join(STATIC_DIR, "assets") # Assuming assets is always 'assets'
+    # Render and Preview subdirectories within the main output directory
+    # Use the CLI options for the names of these subdirectories
+    RENDER_DIR_PATH = os.path.join(OUTPUT_DIR_PATH, render_dir_name)
+    PART_PREVIEW_DIR_PATH = os.path.join(OUTPUT_DIR_PATH, preview_dir_name)
 
-    log.info(f"Using Part Library: {PART_LIBRARY_DIR}"); log.info(f"Using Static Dir: {STATIC_DIR}")
-    log.info(f"Using Preview Dir: {PART_PREVIEW_DIR_PATH} (mounted at /{PART_PREVIEW_DIR_NAME})")
-    log.info(f"Using Render Dir: {RENDER_DIR_PATH} (mounted at /{RENDER_DIR_NAME})")
+    # Part Library Directory (Input) - Ensure it's absolute
+    PART_LIBRARY_DIR = os.path.abspath(part_lib_dir)
+    log.info(f"Using part library directory: {PART_LIBRARY_DIR}")
 
-    # Ensure directories exist (important after paths might have changed)
-    os.makedirs(RENDER_DIR_PATH, exist_ok=True); os.makedirs(PART_PREVIEW_DIR_PATH, exist_ok=True)
-
-    # Re-configure static files if paths changed via CLI (only relevant for SSE mode)
-    if mode == "sse":
-        configure_static_files(app, STATIC_DIR, RENDER_DIR_NAME, RENDER_DIR_PATH, PART_PREVIEW_DIR_NAME, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
-
-    # --- Mode Execution ---
-    if mode == "stdio":
-        # Initial scan needed even for stdio if library tools are used
-        log.info("Performing initial scan of part library for stdio mode...");
-        try: handle_scan_part_library({"request_id": "startup-scan", "arguments": {}})
-        except Exception as e: log.error(f"Initial part library scan failed: {e}", exc_info=True)
-        # Run stdio loop
-        asyncio.run(run_stdio_mode())
-        # raise typer.Exit() # Exit after stdio mode finishes - Typer might handle this?
-    elif mode == "sse":
-         # --- HTTP Mode Execution ---
-        log.info("Performing initial scan of part library...");
-        try: handle_scan_part_library({"request_id": "startup-scan", "arguments": {}})
-        except Exception as e: log.error(f"Initial part library scan failed: {e}", exc_info=True)
-        log.info(f"Starting Uvicorn server on {host}:{port}...");
-        # Need to pass the app instance directly if defined inside a function
-        uvicorn.run(app, host=host, port=port, reload=reload) # Pass app instance
+    # Static Directory (Optional Frontend)
+    serve_frontend = False
+    if static_dir_arg:
+        STATIC_DIR = os.path.abspath(static_dir_arg)
+        # Assume assets is always a subdir named 'assets' within the static dir
+        ASSETS_DIR_PATH = os.path.join(STATIC_DIR, "assets")
+        serve_frontend = True
+        log.info(f"Using static directory for frontend: {STATIC_DIR}")
     else:
-         log.error(f"Invalid mode specified: {mode}. Use 'stdio' or 'sse'.")
-         raise typer.Exit(code=1)
+        STATIC_DIR = None # Explicitly set to None if not provided
+        ASSETS_DIR_PATH = None
+        log.info("No static directory provided, frontend serving disabled.")
+
+    # --- Create Directories ---
+    # Create core output directories
+    os.makedirs(OUTPUT_DIR_PATH, exist_ok=True)
+    os.makedirs(RENDER_DIR_PATH, exist_ok=True)
+    os.makedirs(PART_PREVIEW_DIR_PATH, exist_ok=True)
+    # Create input directory if it doesn't exist
+    os.makedirs(PART_LIBRARY_DIR, exist_ok=True)
+    log.info(f"Ensured core directories exist: Output ('{OUTPUT_DIR_PATH}'), Renders ('{RENDER_DIR_PATH}'), Previews ('{PART_PREVIEW_DIR_PATH}'), Part Library ('{PART_LIBRARY_DIR}')")
+    # Create static dir only if serving frontend
+    if serve_frontend and STATIC_DIR:
+        os.makedirs(STATIC_DIR, exist_ok=True)
+        # Also ensure assets dir exists if static dir is specified and calculated
+        if ASSETS_DIR_PATH: os.makedirs(ASSETS_DIR_PATH, exist_ok=True)
+        log.info(f"Ensured static directory exists: {STATIC_DIR}")
 
 
+    # --- Configure Static Files (Only if serving frontend) ---
+    if serve_frontend and STATIC_DIR and ASSETS_DIR_PATH:
+        # Pass the actual names used for subdirs for URL generation consistency
+        # These names come from the CLI args or their defaults
+        configure_static_files(app, STATIC_DIR, render_dir_name, RENDER_DIR_PATH, preview_dir_name, PART_PREVIEW_DIR_PATH, ASSETS_DIR_PATH)
+        log.info("Static file serving configured.")
+    else:
+        log.info("Skipping static file configuration.")
+
+
+    # --- Start Server ---
+    if stdio:
+        log.info("Starting server in stdio mode.")
+        # Run the stdio mode handler directly
+        asyncio.run(run_stdio_mode())
+    else:
+        log.info(f"Starting HTTP server on {host}:{port}")
+        # Run the FastAPI server using uvicorn
+        # Note: Reload is not explicitly handled here, add if needed via uvicorn args
+        uvicorn.run(app, host=host, port=port)
+
+# --- Entry Point ---
 if __name__ == "__main__":
     # This block runs regardless of whether we are in the venv or not initially.
     # If not in venv, the re-exec happens above.
