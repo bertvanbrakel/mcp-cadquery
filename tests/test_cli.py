@@ -35,12 +35,20 @@ def test_cli_help():
     print(f"Stderr:\n{result.stderr}")
     assert result.returncode == 0
     # Adjust checks based on actual Typer output format
-    assert "Usage: server.py [OPTIONS]" in result.stdout # Check usage line (Typer uses script name here)
+    assert "Usage: server.py [OPTIONS]" in result.stdout
     assert "--host" in result.stdout
     assert "--port" in result.stdout
-    # assert "--reload" in result.stdout # Removed as --reload is no longer a direct CLI arg handled in main
-    # assert "--mode" in result.stdout # Removed as --mode is no longer a direct CLI arg
-    assert "--part-library-dir" in result.stdout # Corrected option name
+    assert "--static-dir" in result.stdout # Should still exist
+    assert "--stdio" in result.stdout # Should exist
+    # Check that removed options are NOT present
+    assert "--output-dir" not in result.stdout
+    assert "--part-library-dir" not in result.stdout
+    assert "--render-dir-name" not in result.stdout
+    assert "--preview-dir-name" not in result.stdout
+    assert "--output-dir" not in result.stdout
+    assert "--part-library-dir" not in result.stdout
+    assert "--render-dir-name" not in result.stdout
+    assert "--preview-dir-name" not in result.stdout
     assert "--static-dir" in result.stdout
     print("CLI --help test passed.")
 
@@ -68,16 +76,23 @@ def test_cli_stdio_invocation():
 
     print("CLI --mode stdio invocation test passed.")
 
-def test_cli_sse_invocation_help():
-    """Test invoking --mode sse (default) shows help correctly."""
-    # SSE mode is default, so just running --help should work
+def test_cli_default_invocation_help():
+    """Test invoking default mode (HTTP) shows help correctly."""
+    # Default mode is HTTP, so just running --help should work
     result = run_server_cli(["--help"])
     print(f"Exit Code: {result.returncode}")
     print(f"Stdout:\n{result.stdout}")
     print(f"Stderr:\n{result.stderr}")
     assert result.returncode == 0
     assert "Usage: server.py [OPTIONS]" in result.stdout
-    # assert "[default: sse]" in result.stdout # Removed check as --mode is gone
+    # Check for relevant options for HTTP mode
+    assert "--host" in result.stdout
+    assert "--port" in result.stdout
+    assert "--static-dir" in result.stdout
+    assert "--stdio" in result.stdout # stdio is always an option
+    # Check removed options are not present
+    assert "--output-dir" not in result.stdout
+    assert "--part-library-dir" not in result.stdout
     print("CLI --mode sse (default) --help test passed.")
 
 # Add more specific CLI tests if needed, e.g., passing invalid args
