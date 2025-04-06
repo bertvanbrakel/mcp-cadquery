@@ -44,4 +44,4 @@ frontend/dist/renders/
 *.swp
 *~
 
-my_cq_workspace/
+*_workspace/

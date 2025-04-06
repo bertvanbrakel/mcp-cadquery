@@ -285,6 +285,16 @@ async def mcp_sse_endpoint(request: Request) -> EventSourceResponse:
     queue = asyncio.Queue()
     sse_connections.append(queue)
     client_host = request.client.host if request.client else "unknown"
+
+    # Send server_info immediately upon connection
+    server_info_message = get_server_info()
+    try:
+        # Use a separate task to avoid blocking the connection setup
+        asyncio.create_task(queue.put(server_info_message))
+        log.info(f"Sent server_info to new SSE client: {client_host}")
+    except Exception as e:
+        log.error(f"Failed to send initial server_info to {client_host}: {e}")
+
     log.info(f"New SSE connection established from {client_host}. Total connections: {len(sse_connections)}")
     async def event_generator():
         try:
@@ -345,20 +355,7 @@ def process_tool_request(request: dict) -> Optional[dict]:
     result_message: dict | None = None; error_message: str | None = None
     log.debug(f"Processing tool request (ID: {request_id}, Tool: {tool_name})")
     try:
-        # Handlers are defined below, they will call the core functions
-        tool_handlers = {
-            "execute_cadquery_script": handle_execute_cadquery_script,
-            "export_shape": handle_export_shape,
-            "export_shape_to_svg": handle_export_shape_to_svg,
-            "scan_part_library": handle_scan_part_library,
-            "search_parts": handle_search_parts,
-            "launch_cq_editor": handle_launch_cq_editor, # Added CQ-Editor launcher
-            "get_shape_properties": handle_get_shape_properties, # Added validation tool
-            "get_shape_description": handle_get_shape_description, # Added description tool
-            "save_workspace_module": handle_save_workspace_module, # Added module saving tool
-            "install_workspace_package": handle_install_workspace_package, # Added package install tool
-            "save_workspace_module": handle_save_workspace_module, # Added module saving tool
-        }
+        # Tool handlers are now defined globally
         handler = tool_handlers.get(tool_name)
         if handler: result_message = handler(request)
         else: error_message = f"Unknown tool: {tool_name}"; log.warning(error_message)
@@ -371,6 +368,120 @@ def process_tool_request(request: dict) -> Optional[dict]:
     elif result_message: message_to_push = {"type": "tool_result", "request_id": request_id, "result": result_message}
     else: log.warning(f"No result or error message generated for request ID: {request_id}")
     return message_to_push
+
+
+# [Handlers definition moved below function definitions]
+# --- Server Info Generation ---
+
+def get_tool_schemas() -> Dict[str, Dict[str, Any]]:
+    """
+    Generates placeholder input schemas for each tool based on handler arguments.
+    TODO: Replace with proper schema definitions (e.g., Pydantic).
+    """
+    # Placeholder schemas - inferring required fields from handler logic
+    schemas = {
+        "execute_cadquery_script": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "script": {"type": "string", "description": "The CadQuery script content."},
+                "parameter_sets": {"type": "array", "items": {"type": "object"}, "description": "List of parameter dictionaries (optional)."},
+                "parameters": {"type": "object", "description": "Single parameter dictionary (alternative to parameter_sets, optional)."}
+            }, "required": ["workspace_path", "script"]
+        },
+        "export_shape": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "result_id": {"type": "string", "description": "ID of the execution result containing the shape."},
+                "shape_index": {"type": "integer", "default": 0, "description": "Index of the shape within the result."},
+                "filename": {"type": "string", "description": "Target filename or path (relative paths resolved against workspace/shapes)."},
+                "format": {"type": "string", "description": "Export format (e.g., 'STEP', 'STL', inferred if None)."},
+                "options": {"type": "object", "default": {}, "description": "Format-specific export options."}
+            }, "required": ["workspace_path", "result_id", "filename"]
+        },
+        "export_shape_to_svg": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "result_id": {"type": "string", "description": "ID of the execution result containing the shape."},
+                "shape_index": {"type": "integer", "default": 0, "description": "Index of the shape within the result."},
+                "filename": {"type": "string", "description": "Optional target filename (defaults to generated name in workspace/renders)."},
+                "options": {"type": "object", "default": {}, "description": "SVG export options."}
+            }, "required": ["workspace_path", "result_id"]
+        },
+        "scan_part_library": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory to scan."}
+            }, "required": ["workspace_path"]
+        },
+        "search_parts": {
+            "type": "object", "properties": {
+                "query": {"type": "string", "description": "Search query string."}
+            }, "required": ["query"]
+        },
+        "launch_cq_editor": {
+            "type": "object", "properties": {}, "required": []
+        },
+        "get_shape_properties": {
+            "type": "object", "properties": {
+                "result_id": {"type": "string", "description": "ID of the execution result containing the shape."},
+                "shape_index": {"type": "integer", "default": 0, "description": "Index of the shape within the result."}
+                # "workspace_path": {"type": "string", "description": "Workspace path (optional, for context)."}
+            }, "required": ["result_id"]
+        },
+        "get_shape_description": {
+            "type": "object", "properties": {
+                "result_id": {"type": "string", "description": "ID of the execution result containing the shape."},
+                "shape_index": {"type": "integer", "default": 0, "description": "Index of the shape within the result."}
+                # "workspace_path": {"type": "string", "description": "Workspace path (optional, for context)."}
+            }, "required": ["result_id"]
+        },
+        "save_workspace_module": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "module_filename": {"type": "string", "description": "Filename for the module (must end in .py)."},
+                "module_content": {"type": "string", "description": "Python code content for the module."}
+            }, "required": ["workspace_path", "module_filename", "module_content"]
+        },
+        "install_workspace_package": {
+            "type": "object", "properties": {
+                "workspace_path": {"type": "string", "description": "Absolute path to the workspace directory."},
+                "package_name": {"type": "string", "description": "Package name to install (e.g., 'numpy', 'git+https://...')."}
+            }, "required": ["workspace_path", "package_name"]
+        }
+    }
+    # Ensure all handlers have a schema entry (even if empty)
+    for tool_name in tool_handlers:
+        if tool_name not in schemas:
+            log.warning(f"No placeholder schema defined for tool: {tool_name}. Adding empty schema.")
+            schemas[tool_name] = {"type": "object", "properties": {}, "required": []}
+    return schemas
+
+
+def get_server_info() -> dict:
+    """Constructs the server_info message."""
+    server_name = "mcp-cadquery-server" # TODO: Make configurable?
+    server_version = "0.2.0-workspace" # TODO: Get version dynamically?
+    tool_schemas = get_tool_schemas()
+    tools = []
+    for name, handler in tool_handlers.items():
+        schema = tool_schemas.get(name, {"type": "object", "properties": {}}) # Default if schema missing
+        # Attempt to get description from handler docstring
+        description = getattr(handler, '__doc__', f"Executes the {name} tool.")
+        if description: description = description.strip().split('\n')[0] # First line only
+
+        tools.append({
+            "name": name,
+            "description": description,
+            "input_schema": schema
+        })
+
+    return {
+        "type": "server_info",
+        "server_name": server_name,
+        "version": server_version,
+        "tools": tools,
+        "resources": [] # Add resource definitions here if any
+    }
+
 
 def handle_execute_cadquery_script(request: dict) -> dict:
     """
@@ -1034,10 +1145,40 @@ def handle_get_shape_description(request: dict) -> dict:
         error_msg = f"Error during shape description generation handling: {e}"
         log.error(error_msg, exc_info=True)
         raise Exception(error_msg)
+# --- Tool Handlers Definition (Moved After Function Definitions) ---
+# Define handlers globally so get_server_info can access them
+tool_handlers = {
+    "execute_cadquery_script": handle_execute_cadquery_script,
+    "export_shape": handle_export_shape,
+    "export_shape_to_svg": handle_export_shape_to_svg,
+    "scan_part_library": handle_scan_part_library,
+    "search_parts": handle_search_parts,
+    "launch_cq_editor": handle_launch_cq_editor,
+    "get_shape_properties": handle_get_shape_properties,
+    "get_shape_description": handle_get_shape_description,
+    "save_workspace_module": handle_save_workspace_module,
+    "install_workspace_package": handle_install_workspace_package,
+}
+
+# --- Stdio Mode ---
+
 
 async def run_stdio_mode() -> None:
     """Runs the server in stdio mode, reading JSON requests from stdin."""
     log.info("Starting server in Stdio mode. Reading from stdin...")
+
+    # Send server_info once at the start for stdio mode
+    try:
+        server_info_message = get_server_info()
+        print(json.dumps(server_info_message), flush=True)
+        log.info("Sent server_info via stdout for stdio mode.")
+    except Exception as e:
+        log.error(f"Failed to generate or send initial server_info in stdio mode: {e}")
+        # Send an error message if possible
+        error_resp = {"type": "tool_error", "request_id": "server-init-fail", "error": f"Failed to send server_info: {e}"}
+        try: print(json.dumps(error_resp), flush=True)
+        except: pass # Ignore if print fails
+
     reader = asyncio.StreamReader()
     protocol = asyncio.StreamReaderProtocol(reader)
     loop = asyncio.get_event_loop()
@@ -1084,7 +1225,12 @@ def main(
         help="Path to the static directory for serving a frontend (e.g., frontend/dist). If not provided, frontend serving is disabled.",
         envvar="MCP_STATIC_DIR"
     ),
-    stdio: bool = typer.Option(False, "--stdio", help="Run in stdio mode instead of HTTP server.")
+    mode: str = typer.Option(
+        "sse", # Default mode is SSE (HTTP)
+        "--mode", "-m",
+        help="Server communication mode: 'sse' (HTTP/Server-Sent Events) or 'stdio'.",
+        case_sensitive=False, # Allow 'SSE', 'Stdio', etc.
+    )
 ):
     """Main function to start the MCP CadQuery server."""
     # Use global keyword to modify global path variables for static serving
@@ -1132,49 +1278,22 @@ def main(
 
 
     # --- Start Server ---
-    if stdio:
+    mode_lower = mode.lower()
+    if mode_lower == "stdio":
         log.info("Starting server in stdio mode.")
         # Run the stdio mode handler directly
         asyncio.run(run_stdio_mode())
-    else:
-        log.info(f"Starting HTTP server on {host}:{port}")
+    elif mode_lower == "sse":
+        log.info(f"Starting HTTP/SSE server on {host}:{port}")
         # Run the FastAPI server using uvicorn
         # Note: Reload is not explicitly handled here, add if needed via uvicorn args
         uvicorn.run(app, host=host, port=port)
-
-
-    # --- Configure Static Files (Only if serving frontend) ---
-    if serve_frontend and STATIC_DIR and ASSETS_DIR_PATH:
-        # Configure static files - Render/Preview paths are now workspace-specific,
-        # so we pass the *default* names for mounting points relative to static root.
-        # The actual files will live inside workspaces, but the frontend might expect
-        # URLs like /renders/file.svg or /part_previews/file.svg
-        # This assumes the frontend knows how to construct the full URL or that
-        # another mechanism provides the workspace context for file serving.
-        # For simplicity, we mount the default names. A more complex setup might
-        # involve dynamic routing based on workspace.
-        log.warning("Static file serving enabled, but render/preview paths are now workspace-relative.")
-        log.warning(f"Mounting default '/{DEFAULT_RENDER_DIR_NAME}' and '/{DEFAULT_PART_PREVIEW_DIR_NAME}' - actual files must be served separately or via workspace-aware routing.")
-        # We still need *some* path for the function signature, even if not used directly
-        # Let's use placeholder paths based on the current dir, they won't be used for file access here.
-        placeholder_render_path = os.path.join(os.getcwd(), DEFAULT_RENDER_DIR_NAME)
-        placeholder_preview_path = os.path.join(os.getcwd(), DEFAULT_PART_PREVIEW_DIR_NAME)
-        configure_static_files(app, STATIC_DIR, DEFAULT_RENDER_DIR_NAME, placeholder_render_path, DEFAULT_PART_PREVIEW_DIR_NAME, placeholder_preview_path, ASSETS_DIR_PATH)
-        log.info("Static file serving configured (using default mount points for renders/previews).")
     else:
-        log.info("Skipping static file configuration.")
+        log.error(f"Invalid mode specified: '{mode}'. Must be 'sse' or 'stdio'.")
+        raise typer.Exit(code=1)
 
 
-    # --- Start Server ---
-    if stdio:
-        log.info("Starting server in stdio mode.")
-        # Run the stdio mode handler directly
-        asyncio.run(run_stdio_mode())
-    else:
-        log.info(f"Starting HTTP server on {host}:{port}")
-        # Run the FastAPI server using uvicorn
-        # Note: Reload is not explicitly handled here, add if needed via uvicorn args
-        uvicorn.run(app, host=host, port=port)
+    # Removed duplicated static file configuration and server start blocks
 
 # --- Entry Point ---
 if __name__ == "__main__":
