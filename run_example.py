@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import requests
 import json
 import time
@@ -100,9 +101,14 @@ import cadquery as cq
 import os
 
 # Define paths relative to the workspace root where the script runs
-shapes_dir = "shapes" # Default output subdir within workspace
+# Use absolute paths within the script temporarily for debugging CWD issues
+# Assuming the script runner *is* running with CWD = workspace_path
+workspace_root = os.getcwd() # Runner's CWD should be the workspace path
+shapes_dir = os.path.join(workspace_root, "shapes")
 wall_path = os.path.join(shapes_dir, "wall.step")
 roof_path = os.path.join(shapes_dir, "roof.step")
+print(f"Assembly Script: Looking for wall at: {{wall_path}}") # Add debug print
+print(f"Assembly Script: Looking for roof at: {{roof_path}}")
 
 # Check if files exist before importing
 if not os.path.exists(wall_path):
@@ -244,7 +250,7 @@ show_object(wall, name="wall_part")
 
         # Allow server time to process exports
         print("[Client] Waiting for STEP exports...")
-        time.sleep(2) # Adjust sleep time as needed
+        time.sleep(5) # Increased sleep time significantly
 
         # 5. Run Assembly Script
         print("\n[Client] Step 5: Running Assembly Script...")

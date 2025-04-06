@@ -138,27 +138,45 @@ def run():
             os.makedirs(result_files_dir, exist_ok=True)
             log.info(f"Created results directory: {result_files_dir}")
 
-            # Export shapes and store paths
-            for i, res in enumerate(build_result.results):
-                # Safely get name, default to shape_<i> if not present
-                shape_name = getattr(res, 'name', None) or f"shape_{i}"
-                shape_info = {"name": shape_name, "type": type(res.shape).__name__}
+            shapes_to_export = []
+            if build_result.results:
+                # Handle scripts that show multiple individual shapes/workplanes
+                log.info(f"Found {len(build_result.results)} shapes in build_result.results.")
+                for i, res in enumerate(build_result.results):
+                    shape_name = getattr(res, 'name', None) or f"shape_{i}"
+                    shapes_to_export.append({"name": shape_name, "shape": res.shape})
+            elif build_result.first_result and isinstance(build_result.first_result.shape, cq.Assembly):
+                # Handle scripts that show a single Assembly object
+                log.info("Found Assembly object in build_result.first_result.")
+                assembly_name = getattr(build_result.first_result, 'name', None) or "assembly_0"
+                shapes_to_export.append({"name": assembly_name, "shape": build_result.first_result.shape})
+            else:
+                log.warning("No exportable results found in BuildResult.")
+
+            # Export shapes/assemblies and store paths
+            for item in shapes_to_export:
+                shape_info = {"name": item["name"], "type": type(item["shape"]).__name__}
                 try:
-                    # Export shape to BREP format (robust intermediate format)
                     intermediate_filename = f"{shape_info['name']}.brep"
                     intermediate_filepath = os.path.join(result_files_dir, intermediate_filename)
-                    log.info(f"Exporting shape {i} to {intermediate_filepath}...")
-                    cq.exporters.export(res.shape, intermediate_filepath, exportType='BREP')
+                    log.info(f"Exporting '{shape_info['name']}' ({shape_info['type']}) to {intermediate_filepath}...")
+                    # Export either Assembly or Shape/Workplane
+                    shape_to_export = item["shape"]
+                    if isinstance(shape_to_export, cq.Assembly):
+                        # Convert assembly to compound for export if necessary
+                        log.debug("Converting Assembly to Compound for BREP export.")
+                        shape_to_export = shape_to_export.toCompound()
+
+                    cq.exporters.export(shape_to_export, intermediate_filepath, exportType='BREP')
                     shape_info["intermediate_path"] = intermediate_filepath # Store the path
-                    log.info(f"Shape {i} exported successfully.")
+                    log.info(f"'{shape_info['name']}' exported successfully.")
                 except Exception as export_err:
-                    log.exception(f"Failed to export shape {i} to BREP.")
+                    log.exception(f"Failed to export '{shape_info['name']}' to BREP.")
                     shape_info["intermediate_path"] = None
                     shape_info["export_error"] = str(export_err)
-                    # Should we mark the whole run as failed if export fails? Maybe not.
 
                 output_result["results"].append(shape_info)
-            log.info(f"Processed {len(output_result['results'])} result shapes.")
+            log.info(f"Processed {len(output_result['results'])} result item(s).")
 
     except Exception as e:
         log.exception("Error during script execution in runner.") # Log full traceback to stderr

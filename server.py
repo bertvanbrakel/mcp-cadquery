@@ -441,7 +441,8 @@ def handle_execute_cadquery_script(request: dict) -> dict:
                     capture_output=True,
                     text=True,
                     check=False, # Don't raise automatically, check return code manually
-                    encoding='utf-8'
+                    encoding='utf-8',
+                    cwd=workspace_path # Set CWD to the workspace path!
                 )
 
                 log.debug(f"[{log_prefix}] Runner stdout:\n{process.stdout}")
@@ -476,25 +477,18 @@ def handle_execute_cadquery_script(request: dict) -> dict:
                 log.info(f"[{log_prefix}] Stored execution result for set {i}. Success: {runner_result.get('success', False)}")
 
             except Exception as exec_err:
+                # This catches errors in running the subprocess or parsing its JSON output
                 log.error(f"[{log_prefix}] Subprocess execution/processing failed for parameter set {i}: {exec_err}", exc_info=True)
-                results_summary.append({
-                    "result_id": result_id,
-                    "success": success,
-                    "shapes_count": len(shapes_data),
-                    "error": exception_str
-                })
-                log.info(f"[{log_prefix}] Stored execution result for set {i}. Success: {success}")
-
-            except Exception as exec_err:
-                log.error(f"[{log_prefix}] Subprocess execution/processing failed for parameter set {i}: {exec_err}", exc_info=True)
+                # Ensure an entry is added to results_summary indicating failure
                 results_summary.append({
                     "result_id": result_id,
                     "success": False,
                     "shapes_count": 0,
-                    "error": f"Handler execution error: {exec_err}"
+                    "error": f"Handler error during execution: {exec_err}"
                 })
-                # Clean up potentially incomplete result
-                if result_id in shape_results: del shape_results[result_id]
+                # Clean up potentially incomplete result from shape_results if it exists
+                if result_id in shape_results:
+                    del shape_results[result_id]
 
 
         total_sets = len(parameter_sets)

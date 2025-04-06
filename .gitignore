@@ -43,3 +43,5 @@ frontend/dist/renders/
 .idea/
 *.swp
 *~
+
+my_cq_workspace/
