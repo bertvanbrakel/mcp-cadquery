@@ -143,7 +143,9 @@ def run():
                 # Handle scripts that show multiple individual shapes/workplanes
                 log.info(f"Found {len(build_result.results)} shapes in build_result.results.")
                 for i, res in enumerate(build_result.results):
-                    shape_name = getattr(res, 'name', None) or f"shape_{i}"
+                    # Try getting name from options dict first, fallback to default
+                    shape_name = res.options.get('name') if hasattr(res, 'options') and isinstance(res.options, dict) else None
+                    shape_name = shape_name or f"shape_{i}"
                     shapes_to_export.append({"name": shape_name, "shape": res.shape})
             elif build_result.first_result and isinstance(build_result.first_result.shape, cq.Assembly):
                 # Handle scripts that show a single Assembly object
