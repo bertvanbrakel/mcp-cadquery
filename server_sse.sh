@@ -2,7 +2,7 @@
 
 # Setup and activate the virtual environment
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-VENV_DIR="$SCRIPT_DIR/.venv"
+VENV_DIR="$SCRIPT_DIR/.venv-cadquery" # Corrected venv name
 VENV_ACTIVATE="$VENV_DIR/bin/activate"
 REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 
@@ -50,4 +50,4 @@ fi
 
 # Run the server in SSE mode, passing through any additional arguments
 echo "Starting server in SSE mode..."
-python "$SCRIPT_DIR/server.py" --mode sse "$@"
+python3 "$SCRIPT_DIR/server.py" --mode sse "$@" # Ensure python3 is used here too

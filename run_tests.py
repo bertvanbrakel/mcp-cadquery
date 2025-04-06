@@ -41,7 +41,7 @@ if not os.path.isfile(python_executable):
 
 # Construct the command to run pytest using the venv's python
 # This ensures pytest and all dependencies are correctly loaded from the venv
-pytest_command = [python_executable, "-m", "pytest"]
+pytest_command = [python_executable, "-m", "pytest", "-vv"] # Add verbosity, timeout configured in pytest.ini
 
 # Pass any arguments from this script call to pytest
 pytest_command.extend(sys.argv[1:])

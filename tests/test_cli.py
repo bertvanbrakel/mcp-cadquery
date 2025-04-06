@@ -39,7 +39,7 @@ def test_cli_help():
     assert "--host" in result.stdout
     assert "--port" in result.stdout
     assert "--static-dir" in result.stdout # Should still exist
-    assert "--stdio" in result.stdout # Should exist
+    assert "--mode" in result.stdout # Check for the option name
     # Check that removed options are NOT present
     assert "--output-dir" not in result.stdout
     assert "--part-library-dir" not in result.stdout
@@ -62,7 +62,7 @@ def test_cli_stdio_invocation():
     try:
         # Timeout after a short period, assuming it started okay if no crash
         print("Running CLI command with --stdio, expecting timeout...")
-        result = run_server_cli(["--stdio"], timeout=3) # Use --stdio flag, shorter timeout
+        result = run_server_cli(["--mode", "stdio"], timeout=3) # Use --mode stdio
         # If it *doesn't* timeout and exits, something is wrong.
         print(f"Exit Code: {result.returncode}")
         print(f"Stdout:\n{result.stdout}")
@@ -89,7 +89,7 @@ def test_cli_default_invocation_help():
     assert "--host" in result.stdout
     assert "--port" in result.stdout
     assert "--static-dir" in result.stdout
-    assert "--stdio" in result.stdout # stdio is always an option
+    assert "--mode" in result.stdout # Check for the option name
     # Check removed options are not present
     assert "--output-dir" not in result.stdout
     assert "--part-library-dir" not in result.stdout

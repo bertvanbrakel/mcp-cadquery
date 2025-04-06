@@ -289,8 +289,8 @@ async def mcp_sse_endpoint(request: Request) -> EventSourceResponse:
     # Send server_info immediately upon connection
     server_info_message = get_server_info()
     try:
-        # Use a separate task to avoid blocking the connection setup
-        asyncio.create_task(queue.put(server_info_message))
+        # Put the message directly in the queue instead of creating a separate task
+        await queue.put(server_info_message)
         log.info(f"Sent server_info to new SSE client: {client_host}")
     except Exception as e:
         log.error(f"Failed to send initial server_info to {client_host}: {e}")

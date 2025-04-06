@@ -7,3 +7,4 @@ pytest
 typer # Added typer for CLI
 httpx # Added for FastAPI TestClient
 cq-editor
+# pytest-timeout # Removed due to hanging/teardown issues
