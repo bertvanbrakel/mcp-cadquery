@@ -238,3 +238,28 @@ def test_substitute_empty_script():
     script_lines = []
     params = {"a": 1}
     assert _substitute_parameters(script_lines, params) == []
+
+
+# Custom class for testing fallback substitution
+class _CustomType:
+    def __init__(self, data):
+        self.data = data
+
+    def __str__(self):
+        return f"CustomStr({self.data})"
+
+    def __repr__(self):
+        return f"CustomRepr({self.data})"
+
+def test_substitute_unsupported_type_fallback():
+    """Test substitution fallback using str() for unsupported types."""
+    script_lines = [
+        "value = None # PARAM",
+        "print(value)"
+    ]
+    params = {"value": _CustomType("test_data")}
+    expected_lines = [
+        "value = CustomStr(test_data) # PARAM (Substituted)", # Should use str()
+        "print(value)"
+    ]
+    assert _substitute_parameters(script_lines, params) == expected_lines

@@ -5,6 +5,8 @@ import os
 import sys
 import uuid
 import shutil
+from unittest.mock import patch
+
 
 # Add back sys.path modification
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -137,6 +139,24 @@ def test_export_shape_invalid_type(tmp_path):
     assert "Object to export is not a cq.Shape or cq.Workplane" in str(excinfo.value)
     assert not output_file.exists()
     print("Invalid type export test passed.")
+
+
+
+@patch('src.mcp_cadquery_server.core.exporters.export')
+def test_export_shape_to_file_exporter_exception(mock_export, test_box_shape, tmp_path):
+    """Test the exception handling when exporters.export fails."""
+    output_file = tmp_path / "fail_export.step"
+    mock_export.side_effect = RuntimeError("Simulated export error")
+    print(f"\nTesting export failure handling for {output_file}...")
+
+    with pytest.raises(Exception) as excinfo:
+        export_shape_to_file(test_box_shape, str(output_file), export_format="STEP")
+
+    assert "Core shape export to file" in str(excinfo.value)
+    assert "Simulated export error" in str(excinfo.value)
+    assert isinstance(excinfo.value.__cause__, RuntimeError)
+    mock_export.assert_called_once()
+    print("Exporter exception handling test passed.")
 
 # Tests for handle_export_shape_to_svg removed as the handler is no longer directly importable/testable here.
 # The core logic (export_shape_to_svg_file) is tested above.

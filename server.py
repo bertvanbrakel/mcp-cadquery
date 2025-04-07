@@ -543,16 +543,28 @@ def handle_execute_cadquery_script(request: dict) -> dict:
                 })
 
                 # Run the script runner using the workspace's python
+                # Prepend coverage command for subprocess coverage measurement
+                # Note: Added --rcfile to ensure the subprocess finds the config relative to its CWD (workspace_path)
+                # Prepend coverage command for subprocess coverage measurement
+                # Revert command to run script directly
                 cmd = [workspace_python_exe, script_runner_path]
                 log.info(f"[{log_prefix}] Running script runner: {' '.join(cmd)}")
+
+                # Set environment variable for coverage in subprocess
+                sub_env = os.environ.copy()
+                sub_env["COVERAGE_RUN_SUBPROCESS"] = "1"
+                # Ensure PYTHONPATH includes project root if necessary for imports in runner
+                # (Assuming runner can find 'src' relative to its location or project root)
+                # sub_env["PYTHONPATH"] = os.path.dirname(_SCRIPT_DIR) + os.pathsep + sub_env.get("PYTHONPATH", "")
 
                 process = subprocess.run(
                     cmd,
                     input=runner_input_data,
                     capture_output=True,
                     text=True,
-                    check=False, # Don't raise automatically, check return code manually
+                    check=False,
                     encoding='utf-8',
+                    env=sub_env, # Pass modified environment
                     cwd=workspace_path # Set CWD to the workspace path!
                 )
 

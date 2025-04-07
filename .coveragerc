@@ -1,0 +1,12 @@
+[run]
+parallel = true
+source = src
+branch = true
+
+[report]
+# Standard options
+show_missing = true
+skip_covered = true
+
+[html]
+directory = cov_html

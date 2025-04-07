@@ -1,3 +1,16 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Attempt to enable coverage measurement in subprocesses
+try:
+    import coverage
+    import os
+    if os.environ.get("COVERAGE_RUN_SUBPROCESS"):
+        coverage.process_startup()
+except ImportError:
+    pass # Coverage not installed, or not running under coverage
+
+
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
