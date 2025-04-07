@@ -32,8 +32,6 @@ def test_box_shape():
     """Provides a simple CadQuery box shape for testing."""
     return cq.Workplane("XY").box(10, 5, 2).val()
 
-# Fixture stored_build_result_id removed as shape_results is no longer accessible/needed
-# Tests will use test_box_shape directly
 
 @pytest.fixture(autouse=True)
 def manage_export_files():
@@ -157,7 +155,3 @@ def test_export_shape_to_file_exporter_exception(mock_export, test_box_shape, tm
     assert isinstance(excinfo.value.__cause__, RuntimeError)
     mock_export.assert_called_once()
     print("Exporter exception handling test passed.")
-
-# Tests for handle_export_shape_to_svg removed as the handler is no longer directly importable/testable here.
-# The core logic (export_shape_to_svg_file) is tested above.
-# Handler testing would require TestClient approach in test_server_handlers.py.

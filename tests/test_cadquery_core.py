@@ -5,13 +5,11 @@ from cadquery import exporters
 import sys
 from unittest.mock import patch, MagicMock, PropertyMock
 
-from unittest.mock import patch, MagicMock
 
 
 # Define output directory for test artifacts
 TEST_OUTPUT_DIR = "test_output"
 os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
-# Removed incorrect import line
 
 # Add project root to path to allow importing src
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -150,7 +148,6 @@ def test_get_shape_properties_center_exception(mock_center, mock_log, simple_box
     # Check log warning was called
     assert any("Could not calculate center of mass" in call.args[0] for call in mock_log.warning.call_args_list)
     # Check log warning was called
-    assert any("Could not calculate center of mass" in call.args[0] for call in mock_log.warning.call_args_list)
 
 
 # --- Tests for get_shape_description ---
@@ -322,7 +319,6 @@ def test_get_shape_description_generic_exception(mock_get_props, mock_log, simpl
     assert any("Core description generation failed" in call.args[0] for call in mock_log.error.call_args_list)
     print("get_shape_description generic exception test passed.")
 
-# Removed duplicated code block
 
 @patch('src.mcp_cadquery_server.core.log.info') # Patch log.info at line 189
 def test_get_shape_properties_generic_exception(mock_log_info, simple_box): # Removed mock_log
@@ -342,5 +338,3 @@ def test_get_shape_properties_generic_exception(mock_log_info, simple_box): # Re
     assert "Unexpected Core Error" in str(excinfo.value)
     # Logging check removed for simplicity, focus on raising the exception
     print("get_shape_properties generic exception test passed.")
-
-# Removed failing test_export_box_tjs

@@ -9,7 +9,7 @@ import asyncio # Needed for stdio mode basic parsing
 from typing import Dict, Any, List, Optional, Union # Keep basic typing
 
 # --- Constants for Environment Setup ---
-VENV_DIR = ".venv-cadquery"
+VENV_DIR = ".venv" # Align with usage in prepare_workspace_env
 REQUIREMENTS_FILE = "requirements.txt"
 PYTHON_VERSION = "3.11" # Specify desired Python version for uv
 

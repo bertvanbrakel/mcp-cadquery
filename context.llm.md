@@ -1,4 +1,6 @@
-# Test Coverage Improvement Task
+# Project Context: mcp-cadquery
+
+## Task: Test Coverage Improvement
 
 **Objective:** Achieve 100% test coverage for `src/mcp_cadquery_server/core.py` and `src/mcp_cadquery_server/script_runner.py`.
 
@@ -17,3 +19,20 @@
 9.  Final verification.
 
 **Current Status:** Subprocess coverage is working. `script_runner.py` is at 86%. Need to add tests to cover the remaining lines.
+
+---
+
+## Task: Full Code Review
+
+**Objective:** Conduct a comprehensive code review of production code, test code, and the MCP API definition, documenting findings in `code_review.llm.md`.
+
+**Plan:**
+1.  Identify scope (src, tests, server.py API). (DONE)
+2.  Define review criteria (best practices, docs, actionable comments, DRY, clarity, SRP, abstraction, errors, API clarity). (DONE)
+3.  Create `code_review.llm.md` to store findings. (DONE)
+4.  Update `context.llm.md` (this file) to link to the review file. (DONE)
+5.  Initiate review via separate Boomerang tasks (likely switching to 'code' mode), using `code_review.llm.md` as input. (NEXT STEP)
+
+**Review Findings Document:** [code_review.llm.md](code_review.llm.md)
+
+**Current Status:** Planning complete. Ready to start the review process by creating Boomerang tasks based on the findings document.

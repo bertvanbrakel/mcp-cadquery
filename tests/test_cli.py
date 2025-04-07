@@ -3,13 +3,7 @@ import os
 import sys
 import subprocess # Use subprocess to run the script
 
-# Add back sys.path modification
-# This might not be strictly necessary anymore if running as subprocess
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Cannot import cli directly anymore
-# from server import cli
-# runner = CliRunner() # Cannot use CliRunner easily
 
 # Define path to the server script and venv python
 SERVER_SCRIPT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'server.py'))
@@ -102,4 +96,4 @@ def test_cli_default_invocation_help():
     assert "--part-library-dir" not in result.stdout
     print("CLI --mode sse (default) --help test passed.")
 
-# Add more specific CLI tests if needed, e.g., passing invalid args
+# TODO: Add more specific CLI tests if needed, e.g., passing invalid args

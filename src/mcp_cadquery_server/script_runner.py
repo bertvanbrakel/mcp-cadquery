@@ -11,7 +11,6 @@ except ImportError:
     pass # Coverage not installed, or not running under coverage
 
 
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 Helper script executed within a workspace's virtual environment to run
@@ -41,30 +40,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# --- Parameter Substitution Logic (Copied from core.py for standalone execution) ---
-def _substitute_parameters(script_lines: List[str], params: Dict[str, Any]) -> List[str]:
-    """Substitutes parameters into script lines marked with # PARAM."""
-    modified_lines = []
-    param_pattern = re.compile(r"^\s*(\w+)\s*=\s*.*#\s*PARAM\s*$")
-    log.debug(f"Attempting substitution with params: {params}")
-    for line in script_lines:
-        match = param_pattern.match(line)
-        if match:
-            param_name = match.group(1)
-            if param_name in params:
-                value = params[param_name]
-                # Format value as Python literal (basic handling)
-                if isinstance(value, str): formatted_value = repr(value)
-                elif isinstance(value, (int, float, bool, list, dict, tuple)) or value is None: formatted_value = repr(value)
-                else: formatted_value = str(value) # Fallback for other types
-                indent = line[:match.start(1)] # Preserve original indentation
-                modified_lines.append(f"{indent}{param_name} = {formatted_value} # PARAM (Substituted)")
-                log.debug(f"Substituted parameter '{param_name}' with value: {formatted_value}")
-                continue # Skip original line
-            else:
-                 log.debug(f"Parameter '{param_name}' found in script but not in provided params.")
-        modified_lines.append(line)
-    return modified_lines
+# Parameter substitution is handled by the calling process (server.py)
 
 # --- Main Execution ---
 def run():
@@ -111,11 +87,10 @@ def run():
 
 
         # 3. Perform parameter substitution
-        log.info("Performing parameter substitution...")
-        original_script_lines = script_content.splitlines()
-        modified_script_lines = _substitute_parameters(original_script_lines, parameters)
-        modified_script = "\n".join(modified_script_lines)
-        log.debug(f"Substituted script:\n{modified_script[:500]}...")
+        log.info("Skipping parameter substitution (handled by caller)...")
+        # Use the original script content directly
+        modified_script = script_content
+        log.debug(f"Using script content:\n{modified_script[:500]}...")
 
         # 4. Execute the script using cadquery.cqgi
         # IMPORTANT: Need cadquery installed in the workspace venv!

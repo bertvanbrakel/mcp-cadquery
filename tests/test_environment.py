@@ -5,7 +5,6 @@ import pytest
 
 VENV_DIR = ".venv-cadquery"
 PYTHON_EXE = os.path.join(VENV_DIR, "bin", "python") # Adjust for Windows if needed
-# SETUP_SCRIPT = "./setup_env.py" # No longer needed, server.py handles setup
 
 import shutil
 from unittest.mock import patch, call # Import necessary mocking tools

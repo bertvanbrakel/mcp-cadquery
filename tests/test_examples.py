@@ -2,8 +2,6 @@ import pytest
 import os
 import sys
 import subprocess
-import requests
-import uuid
 from unittest.mock import patch
 
 # Define path to the venv python and the example scripts
