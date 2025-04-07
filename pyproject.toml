@@ -35,7 +35,7 @@ test = [
 
 [project.scripts]
 # This creates the 'mcp-cadquery' command that points to the Typer app
-mcp-cadquery = "mcp_cadquery_server.main:cli"
+mcp-cadquery = "mcp_cadquery_server.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]  # Look for packages in src/

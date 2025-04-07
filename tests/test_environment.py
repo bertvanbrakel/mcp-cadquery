@@ -13,21 +13,14 @@ from pathlib import Path # Import Path
 # Need to adjust import path if server.py is not directly importable
 # Assuming server.py is in the parent directory relative to tests/
 # This might need adjustment based on actual project structure/PYTHONPATH
-try:
-    # This assumes server.py is in the root and tests/ is a subdir
-    # If server.py is in src/, the import needs adjustment
-    import server
-    prepare_workspace_env = server.prepare_workspace_env
-    _run_command_helper = server._run_command_helper
-    workspace_reqs_mtime_cache = server.workspace_reqs_mtime_cache
-except ImportError:
-     # Fallback if the above structure is wrong - adjust as needed
-     # This might happen if running pytest from the root directory
-     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-     import server
-     prepare_workspace_env = server.prepare_workspace_env
-     _run_command_helper = server._run_command_helper
-     workspace_reqs_mtime_cache = server.workspace_reqs_mtime_cache
+# Import directly from the correct module
+from src.mcp_cadquery_server.env_setup import (
+    prepare_workspace_env,
+    _run_command_helper,
+    workspace_reqs_mtime_cache,
+    PYTHON_VERSION as ENV_SETUP_PYTHON_VERSION # Import with alias if needed locally
+)
+from src.mcp_cadquery_server import state # Import state for defaults if needed
 
 
 # Note: Environment setup is now handled by prepare_workspace_env per workspace.
@@ -64,7 +57,7 @@ def test_cadquery_import():
 
 # --- Tests for prepare_workspace_env ---
 
-@patch('server._run_command_helper') # Mock the helper that runs uv
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper') # Mock the helper that runs uv
 @patch('shutil.which') # Mock the check for uv command
 def test_prepare_workspace_env_creation(mock_which, mock_run_helper, tmp_path):
     """Test creating a new workspace environment."""
@@ -116,7 +109,7 @@ def test_prepare_workspace_env_creation(mock_which, mock_run_helper, tmp_path):
     mock_which.assert_called_once_with("uv")
 
     # Check that _run_command_helper was called for venv creation and cadquery install
-    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", server.PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
+    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", ENV_SETUP_PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     expected_cq_install_call = call(["uv", "pip", "install", "cadquery", "--python", str(expected_python_exe)], log_prefix=f"WorkspaceEnv({workspace_path.name})")
 
     # Check calls - order might vary slightly depending on implementation details, focus on presence
@@ -133,7 +126,7 @@ def test_prepare_workspace_env_creation(mock_which, mock_run_helper, tmp_path):
     print(f"\nTest test_prepare_workspace_env_creation passed for {workspace_path}")
 
 
-@patch('server._run_command_helper')
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper')
 @patch('shutil.which')
 def test_prepare_workspace_env_existing_venv(mock_which, mock_run_helper, tmp_path):
     """Test prepare_workspace_env when the venv directory already exists."""
@@ -188,7 +181,7 @@ def test_prepare_workspace_env_existing_venv(mock_which, mock_run_helper, tmp_pa
 
 
 
-@patch('server._run_command_helper')
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper')
 @patch('shutil.which')
 def test_prepare_workspace_env_with_requirements(mock_which, mock_run_helper, tmp_path):
     """Test creating env and installing dependencies from requirements.txt."""
@@ -235,7 +228,7 @@ def test_prepare_workspace_env_with_requirements(mock_which, mock_run_helper, tm
     mock_which.assert_called_once_with("uv")
 
     # Check calls
-    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", server.PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
+    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", ENV_SETUP_PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     expected_cq_install_call = call(["uv", "pip", "install", "cadquery", "--python", str(expected_python_exe)], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     expected_reqs_install_call = call(["uv", "pip", "install", "-r", str(requirements_file), "--python", str(expected_python_exe)], log_prefix=f"WorkspaceEnv({workspace_path.name})")
 
@@ -254,7 +247,7 @@ def test_prepare_workspace_env_with_requirements(mock_which, mock_run_helper, tm
 
 
 
-@patch('server._run_command_helper')
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper')
 @patch('shutil.which')
 def test_prepare_workspace_env_requirements_unchanged(mock_which, mock_run_helper, tmp_path):
     """Test that requirements install is skipped if mtime hasn't changed."""
@@ -312,7 +305,7 @@ def test_prepare_workspace_env_requirements_unchanged(mock_which, mock_run_helpe
 
 
 
-@patch('server._run_command_helper')
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper')
 @patch('shutil.which')
 def test_prepare_workspace_env_requirements_changed(mock_which, mock_run_helper, tmp_path):
     """Test that requirements install is triggered if mtime has changed."""
@@ -379,7 +372,7 @@ def test_prepare_workspace_env_requirements_changed(mock_which, mock_run_helper,
 
 
 
-@patch('server._run_command_helper')
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper')
 @patch('shutil.which')
 def test_prepare_workspace_env_install_failure(mock_which, mock_run_helper, tmp_path):
     """Test that RuntimeError is raised if requirements install fails."""
@@ -429,7 +422,7 @@ def test_prepare_workspace_env_install_failure(mock_which, mock_run_helper, tmp_
     assert str(workspace_path) not in workspace_reqs_mtime_cache
 
     # Verify calls up to the point of failure
-    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", server.PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
+    expected_venv_call = call(["uv", "venv", str(venv_dir), "-p", ENV_SETUP_PYTHON_VERSION], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     expected_cq_install_call = call(["uv", "pip", "install", "cadquery", "--python", str(expected_python_exe)], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     expected_reqs_install_call = call(["uv", "pip", "install", "-r", str(requirements_file), "--python", str(expected_python_exe)], log_prefix=f"WorkspaceEnv({workspace_path.name})")
     mock_run_helper.assert_has_calls([

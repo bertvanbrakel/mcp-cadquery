@@ -14,17 +14,11 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import server components needed for integration tests
-try:
-    import server # Import the main server module
-    app = server.app # Get the FastAPI app instance
-    shape_results = server.shape_results # Access global state if needed
-    prepare_workspace_env = server.prepare_workspace_env # For setup
-except ImportError as e:
-    print(f"Error importing server module: {e}")
-    # Define dummy fallbacks if import fails, tests will likely fail but prevents crash
-    app = None
-    shape_results = {}
-    prepare_workspace_env = lambda x: "/fake/python"
+# Import necessary components from their new locations
+from src.mcp_cadquery_server import state
+from src.mcp_cadquery_server.web_server import app # Import app from web_server
+from src.mcp_cadquery_server.env_setup import prepare_workspace_env # Import from env_setup
+# shape_results is accessed via state.shape_results
 
 # Import the old function for comparison if needed (or remove old tests)
 from src.mcp_cadquery_server.core import execute_cqgi_script
@@ -46,9 +40,10 @@ def client():
 @pytest.fixture(autouse=True)
 def clear_shape_results_before_each():
     """Clears the global shape_results dict before each test in this module."""
-    if 'shape_results' in globals() and isinstance(shape_results, dict):
-        print("\nClearing shape_results...")
-        shape_results.clear()
+    # Access shape_results via the imported state module
+    if hasattr(state, 'shape_results') and isinstance(state.shape_results, dict):
+        print("\nClearing state.shape_results...")
+        state.shape_results.clear()
     yield # Run the test
     # No cleanup needed after, assuming tests don't expect cross-test state
 
@@ -130,7 +125,7 @@ def test_execute_script_no_result_variable():
 # but we DON'T mock subprocess.run within the handler itself.
 
 @pytest.mark.skip(reason="Integration test unstable under coverage")
-@patch('server.prepare_workspace_env') # Mock env prep for speed/reliability
+@patch('src.mcp_cadquery_server.env_setup.prepare_workspace_env') # Mock env prep for speed/reliability
 def test_integration_execute_simple_script_in_workspace(mock_prepare_env, client, tmp_path):
     """Integration test: execute a simple script in a workspace via API."""
     workspace_path = tmp_path / "integration_ws_simple"
@@ -167,9 +162,9 @@ def test_integration_execute_simple_script_in_workspace(mock_prepare_env, client
 
     # Check results state (populated by the background task)
     # Check if any key starts with the request_id (to handle _0, _1 suffixes)
-    found_key = next((key for key in shape_results if key.startswith(request_id)), None)
-    assert found_key is not None, f"Result ID starting with '{request_id}' not found in shape_results keys: {list(shape_results.keys())}"
-    exec_result = shape_results[found_key]
+    found_key = next((key for key in state.shape_results if key.startswith(request_id)), None)
+    assert found_key is not None, f"Result ID starting with '{request_id}' not found in state.shape_results keys: {list(state.shape_results.keys())}"
+    exec_result = state.shape_results[found_key]
     assert exec_result["success"] is True
     assert len(exec_result["results"]) == 1
     single_result = exec_result["results"][0]
@@ -190,7 +185,7 @@ def test_integration_execute_simple_script_in_workspace(mock_prepare_env, client
     print("Integration test for simple script execution passed.")
 
 @pytest.mark.skip(reason="Integration test unstable under coverage")
-@patch('server.prepare_workspace_env') # Mock env prep
+@patch('src.mcp_cadquery_server.env_setup.prepare_workspace_env') # Mock env prep
 def test_integration_execute_with_params_in_workspace(mock_prepare_env, client, tmp_path):
     """Integration test: execute a script with parameters in a workspace."""
     workspace_path = tmp_path / "integration_ws_params"
@@ -227,9 +222,9 @@ def test_integration_execute_with_params_in_workspace(mock_prepare_env, client, 
     mock_prepare_env.assert_called_once_with(str(workspace_path))
 
     # Check results state
-    found_key = next((key for key in shape_results if key.startswith(request_id)), None)
-    assert found_key is not None, f"Result ID starting with '{request_id}' not found in shape_results keys: {list(shape_results.keys())}"
-    exec_result = shape_results[found_key]
+    found_key = next((key for key in state.shape_results if key.startswith(request_id)), None)
+    assert found_key is not None, f"Result ID starting with '{request_id}' not found in state.shape_results keys: {list(state.shape_results.keys())}"
+    exec_result = state.shape_results[found_key]
     assert exec_result["success"] is True
     assert len(exec_result["results"]) == 1
     single_result = exec_result["results"][0]
@@ -250,7 +245,7 @@ def test_integration_execute_with_params_in_workspace(mock_prepare_env, client, 
     print("Integration test for script execution with parameters passed.")
 
 @pytest.mark.skip(reason="Integration test unstable under coverage")
-@patch('server.prepare_workspace_env') # Mock env prep
+@patch('src.mcp_cadquery_server.env_setup.prepare_workspace_env') # Mock env prep
 def test_integration_execute_with_workspace_module(mock_prepare_env, client, tmp_path):
     """Integration test: execute a script that imports a workspace module."""
     workspace_path = tmp_path / "integration_ws_module"
@@ -311,9 +306,9 @@ def test_integration_execute_with_workspace_module(mock_prepare_env, client, tmp
     mock_prepare_env.assert_called_with(str(workspace_path)) # Should be called again for exec
 
     # Check results state
-    found_key = next((key for key in shape_results if key.startswith(exec_request_id)), None)
-    assert found_key is not None, f"Result ID starting with '{exec_request_id}' not found in shape_results keys: {list(shape_results.keys())}"
-    exec_result = shape_results[found_key]
+    found_key = next((key for key in state.shape_results if key.startswith(exec_request_id)), None)
+    assert found_key is not None, f"Result ID starting with '{exec_request_id}' not found in state.shape_results keys: {list(state.shape_results.keys())}"
+    exec_result = state.shape_results[found_key]
     assert exec_result["success"] is True, f"Execution failed: {exec_result.get('exception_str')}"
     assert len(exec_result["results"]) == 1
     single_result = exec_result["results"][0]
@@ -329,8 +324,8 @@ def test_integration_execute_with_workspace_module(mock_prepare_env, client, tmp
     print("Integration test for script execution with workspace module passed.")
 
 @pytest.mark.skip(reason="Integration test unstable under coverage")
-@patch('server._run_command_helper') # Mock uv calls
-@patch('server.prepare_workspace_env') # Mock env prep
+@patch('src.mcp_cadquery_server.env_setup._run_command_helper') # Mock uv calls
+@patch('src.mcp_cadquery_server.env_setup.prepare_workspace_env') # Mock env prep
 def test_integration_execute_with_installed_package(mock_prepare_env, mock_run_helper, client, tmp_path):
     """Integration test: execute script using package installed via tool."""
     workspace_path = tmp_path / "integration_ws_package"
@@ -398,9 +393,9 @@ def test_integration_execute_with_installed_package(mock_prepare_env, mock_run_h
     mock_prepare_env.assert_called_with(str(workspace_path))
 
     # Check results state
-    found_key = next((key for key in shape_results if key.startswith(exec_request_id)), None)
-    assert found_key is not None, f"Result ID starting with '{exec_request_id}' not found in shape_results keys: {list(shape_results.keys())}"
-    exec_result = shape_results[found_key]
+    found_key = next((key for key in state.shape_results if key.startswith(exec_request_id)), None)
+    assert found_key is not None, f"Result ID starting with '{exec_request_id}' not found in state.shape_results keys: {list(state.shape_results.keys())}"
+    exec_result = state.shape_results[found_key]
     # Check the log from the script runner for the print statement
     assert exec_result["success"] is True, f"Execution failed: {exec_result.get('exception_str')}"
     assert len(exec_result["results"]) == 1
@@ -418,7 +413,7 @@ def test_integration_execute_with_installed_package(mock_prepare_env, mock_run_h
     print("Integration test for script execution with installed package passed.")
 
 @pytest.mark.skip(reason="Integration test unstable under coverage")
-@patch('server.prepare_workspace_env') # Mock env prep
+@patch('src.mcp_cadquery_server.env_setup.prepare_workspace_env') # Mock env prep
 def test_integration_execute_script_failure_in_workspace(mock_prepare_env, client, tmp_path):
     """Integration test: execute a script with a runtime error in a workspace."""
     workspace_path = tmp_path / "integration_ws_fail"
@@ -453,9 +448,9 @@ def test_integration_execute_script_failure_in_workspace(mock_prepare_env, clien
     mock_prepare_env.assert_called_once_with(str(workspace_path))
 
     # Check results state for failure
-    found_key = next((key for key in shape_results if key.startswith(request_id)), None)
-    assert found_key is not None, f"Result ID starting with '{request_id}' not found in shape_results keys: {list(shape_results.keys())}"
-    exec_result = shape_results[found_key]
+    found_key = next((key for key in state.shape_results if key.startswith(request_id)), None)
+    assert found_key is not None, f"Result ID starting with '{request_id}' not found in state.shape_results keys: {list(state.shape_results.keys())}"
+    exec_result = state.shape_results[found_key]
     assert exec_result["success"] is False, "Execution should have failed"
     assert "exception_str" in exec_result and exec_result["exception_str"], "Exception string should be present on failure"
 

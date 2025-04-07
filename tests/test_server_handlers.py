@@ -18,16 +18,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 # Import the app instance, state, and necessary constants/functions from server
 # DO NOT import path variables that are set dynamically in main()
-import server # Import the module itself to allow patching its globals
-from server import (
-    app,
-    shape_results,
-    part_index,
-    DEFAULT_OUTPUT_DIR_NAME, # Default names are still constants
-    DEFAULT_RENDER_DIR_NAME,
-    DEFAULT_PART_PREVIEW_DIR_NAME,
-    DEFAULT_PART_LIBRARY_DIR
-)
+# Import the app instance from web_server
+from src.mcp_cadquery_server.web_server import app
+# Import server module only if needed for patching other globals (if any remain)
+# import server
+from src.mcp_cadquery_server import state # Import state module
+# Access state variables via state.variable_name
+# e.g., state.shape_results, state.part_index, state.DEFAULT_OUTPUT_DIR_NAME etc.
 # Import core logic needed by fixtures
 from src.mcp_cadquery_server.core import execute_cqgi_script
 
@@ -64,8 +61,8 @@ def manage_state_and_test_files(tmp_path): # Remove stored_build_result_id_for_h
     """
     # --- Setup ---
     print("\nAuto-fixture: Setting up state and test files...")
-    shape_results.clear()
-    part_index.clear()
+    state.shape_results.clear()
+    state.part_index.clear()
 
     # Remove logic that re-created the build result from the old fixture
     # script = "import cadquery as cq\nresult = cq.Workplane('XY').box(1, 1, 1)\nshow_object(result)"
@@ -85,10 +82,10 @@ def manage_state_and_test_files(tmp_path): # Remove stored_build_result_id_for_h
     tmp_workspace_reqs = tmp_workspace / "requirements.txt"
 
     # General output/config paths (still useful for patching server defaults)
-    tmp_output_dir = tmp_workspace / DEFAULT_OUTPUT_DIR_NAME # Output inside workspace
-    tmp_render_dir = tmp_output_dir / DEFAULT_RENDER_DIR_NAME
-    tmp_preview_dir = tmp_output_dir / DEFAULT_PART_PREVIEW_DIR_NAME
-    tmp_part_lib_dir = tmp_workspace / DEFAULT_PART_LIBRARY_DIR # Library inside workspace
+    tmp_output_dir = tmp_workspace / state.DEFAULT_OUTPUT_DIR_NAME # Output inside workspace
+    tmp_render_dir = tmp_output_dir / state.DEFAULT_RENDER_DIR_NAME
+    tmp_preview_dir = tmp_output_dir / state.DEFAULT_PART_PREVIEW_DIR_NAME
+    tmp_part_lib_dir = tmp_workspace / state.DEFAULT_PART_LIBRARY_DIR # Library inside workspace
     tmp_static_dir = tmp_path / "static_test" # Static files separate from workspace
     tmp_assets_dir = tmp_static_dir / "assets"
 
@@ -108,13 +105,14 @@ def manage_state_and_test_files(tmp_path): # Remove stored_build_result_id_for_h
     # tmp_workspace_reqs.touch()
 
     # Patch the global path variables in the 'server' module for the duration of the test
+    # Patch the ACTIVE paths in the state module
     patches = [
-        patch('server.OUTPUT_DIR_PATH', str(tmp_output_dir)),
-        patch('server.RENDER_DIR_PATH', str(tmp_render_dir)),
-        patch('server.PART_PREVIEW_DIR_PATH', str(tmp_preview_dir)),
-        patch('server.PART_LIBRARY_DIR', str(tmp_part_lib_dir)),
-        patch('server.STATIC_DIR', str(tmp_static_dir)),
-        patch('server.ASSETS_DIR_PATH', str(tmp_assets_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_OUTPUT_DIR_PATH', str(tmp_output_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_RENDER_DIR_PATH', str(tmp_render_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_PART_PREVIEW_DIR_PATH', str(tmp_preview_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_PART_LIBRARY_DIR', str(tmp_part_lib_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_STATIC_DIR', str(tmp_static_dir)),
+        patch('src.mcp_cadquery_server.state.ACTIVE_ASSETS_DIR_PATH', str(tmp_assets_dir)),
     ]
 
     # Enter all patch contexts
@@ -148,8 +146,8 @@ def manage_state_and_test_files(tmp_path): # Remove stored_build_result_id_for_h
 
     # --- Teardown ---
     print("\nAuto-fixture: Tearing down state and test files...")
-    shape_results.clear()
-    part_index.clear()
+    state.shape_results.clear()
+    state.part_index.clear()
     print("Auto-fixture: Cleared shape_results and part_index.")
 
     # Stop all patches
@@ -173,8 +171,8 @@ def client():
 # --- Test Cases for /mcp/execute Endpoint ---
 
 # Note: Need tmp_path injected into tests that use workspace_path
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env') # Corrected function name
+@patch('src.mcp_cadquery_server.handlers.subprocess.run') # Patch where subprocess is used
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env') # Patch where prepare_workspace_env is used
 def test_mcp_execute_endpoint_script_success(mock_ensure_env, mock_subprocess_run, client, tmp_path):
     """Test execute_cadquery_script via API with workspace, mocking subprocess."""
     # --- Mock Setup ---
@@ -224,9 +222,9 @@ def test_mcp_execute_endpoint_script_success(mock_ensure_env, mock_subprocess_ru
     mock_subprocess_run.assert_called_once()
     # More specific checks on call args could be added if needed
 
-    # Check that the result was stored correctly in shape_results (based on mocked output)
-    assert result_id_expected in shape_results
-    result_data = shape_results[result_id_expected]
+    # Check that the result was stored correctly in state.shape_results (based on mocked output)
+    assert result_id_expected in state.shape_results
+    result_data = state.shape_results[result_id_expected]
     assert isinstance(result_data, dict)
     assert result_data.get("success") is True
     assert result_data.get("exception_str") is None
@@ -238,8 +236,8 @@ def test_mcp_execute_endpoint_script_success(mock_ensure_env, mock_subprocess_ru
     assert shape_info.get("intermediate_path") == dummy_brep_path
     print("POST /mcp/execute execute_cadquery_script test passed.")
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env') # Corrected function name
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_endpoint_script_params_success(mock_ensure_env, mock_subprocess_run, client, tmp_path):
     """Test execute_cadquery_script with parameter_sets via API with workspace, mocking subprocess."""
     # --- Mock Setup ---
@@ -282,9 +280,9 @@ def test_mcp_execute_endpoint_script_params_success(mock_ensure_env, mock_subpro
     assert mock_subprocess_run.call_count == 2
 
     # Check results stored based on mocked outputs
-    assert result_id_0 in shape_results and result_id_1 in shape_results
-    result_data_0 = shape_results[result_id_0]
-    result_data_1 = shape_results[result_id_1]
+    assert result_id_0 in state.shape_results and result_id_1 in state.shape_results
+    result_data_0 = state.shape_results[result_id_0]
+    result_data_1 = state.shape_results[result_id_1]
     assert isinstance(result_data_0, dict) and isinstance(result_data_1, dict)
     assert result_data_0.get("success") is True and result_data_1.get("success") is True
     assert result_data_0.get("exception_str") is None and result_data_1.get("exception_str") is None
@@ -295,8 +293,8 @@ def test_mcp_execute_endpoint_script_params_success(mock_ensure_env, mock_subpro
 
     print("POST /mcp/execute with parameter_sets (Mocked Subprocess) test passed.")
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_endpoint_export_svg_success(mock_prepare_env, mock_run, client, tmp_path):
     """Test export_shape_to_svg via API within a workspace context."""
     # --- Setup: Simulate prior script execution ---
@@ -324,7 +322,8 @@ def test_mcp_execute_endpoint_export_svg_success(mock_prepare_env, mock_run, cli
         f.write("dummy brep content") # Actual content doesn't matter for this test path
 
     # Store the mocked result in the server's state (as if execution happened)
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state (as if execution happened)
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call export_shape_to_svg ---
     export_request_id = f"test-svg-export-{uuid.uuid4()}"
@@ -344,7 +343,7 @@ def test_mcp_execute_endpoint_export_svg_success(mock_prepare_env, mock_run, cli
     # Patch cq.importers.importBrep to return a mock shape, as the dummy brep is invalid
     # Also patch the actual export function to avoid real file I/O errors with dummy shape
     with patch('cadquery.importers.importBrep') as mock_import, \
-         patch('server.export_shape_to_svg_file') as mock_export_svg: # Patch where it's used
+         patch('src.mcp_cadquery_server.handlers.export_shape_to_svg_file') as mock_export_svg: # Patch where it's used
 
         mock_shape = cq.Workplane().box(1,1,1) # Create a real shape for type checking
         mock_import.return_value = mock_shape
@@ -358,7 +357,7 @@ def test_mcp_execute_endpoint_export_svg_success(mock_prepare_env, mock_run, cli
 
         # Check that the core export function was called with correct args
         mock_import.assert_called_once_with(intermediate_brep_path)
-        expected_svg_output_dir = tmp_path / "test_workspace" / server.DEFAULT_RENDER_DIR_NAME
+        expected_svg_output_dir = tmp_path / "test_workspace" / state.DEFAULT_OUTPUT_DIR_NAME / state.DEFAULT_RENDER_DIR_NAME # Path is workspace/output/render
         expected_svg_output_path = expected_svg_output_dir / svg_filename
         mock_export_svg.assert_called_once()
         # Check the shape and path passed to the core export function
@@ -368,10 +367,10 @@ def test_mcp_execute_endpoint_export_svg_success(mock_prepare_env, mock_run, cli
 
     print("POST /mcp/execute export_shape_to_svg (Workspace) test passed.")
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 @patch('cadquery.importers.importBrep') # Mock the BREP import
-@patch('server.export_shape_to_file') # Patch where it's used
+@patch('src.mcp_cadquery_server.handlers.export_shape_to_file') # Patch where it's used
 def test_mcp_execute_endpoint_export_shape_step_success(mock_export_file, mock_import_brep, mock_prepare_env, mock_run, client, tmp_path):
     """Test generic export_shape (STEP) via API within a workspace context."""
     # --- Setup: Simulate prior script execution ---
@@ -398,7 +397,8 @@ def test_mcp_execute_endpoint_export_shape_step_success(mock_export_file, mock_i
     with open(intermediate_brep_path, "w") as f: f.write("dummy brep")
 
     # Store the mocked result in the server's state
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # Mock the import and export functions
     mock_shape = cq.Workplane().box(1,1,1) # Dummy shape
@@ -450,14 +450,14 @@ def test_mcp_execute_scan_part_library(client, tmp_path): # Add tmp_path
     assert response.status_code == 200
     assert response.json() == {"status": "processing", "request_id": request_id}
     time.sleep(1.0) # Allow time for scanning
-    assert len(part_index) == 2 # part1_box, part2_sphere (part3_error should fail)
-    assert "part1_box" in part_index and "part2_sphere" in part_index
-    assert "part3_error" not in part_index
+    assert len(state.part_index) == 2, f"Expected 2 parts in index, found {len(state.part_index)}" # part1_box, part2_sphere (part3_error should fail)
+    assert "part1_box" in state.part_index and "part2_sphere" in state.part_index
+    assert "part3_error" not in state.part_index
     # Check preview files exist
-    # Check paths using the *patched* global variable
-    assert os.path.exists(os.path.join(server.PART_PREVIEW_DIR_PATH, "part1_box.svg"))
-    assert os.path.exists(os.path.join(server.PART_PREVIEW_DIR_PATH, "part2_sphere.svg"))
-    assert not os.path.exists(os.path.join(server.PART_PREVIEW_DIR_PATH, "part3_error.svg"))
+    # Check paths using the *patched* state variable
+    assert os.path.exists(os.path.join(state.ACTIVE_PART_PREVIEW_DIR_PATH, "part1_box.svg"))
+    assert os.path.exists(os.path.join(state.ACTIVE_PART_PREVIEW_DIR_PATH, "part2_sphere.svg"))
+    assert not os.path.exists(os.path.join(state.ACTIVE_PART_PREVIEW_DIR_PATH, "part3_error.svg"))
     print("POST /mcp/execute scan_part_library test passed.")
 
 def test_mcp_execute_search_parts_success(client, tmp_path): # Add tmp_path
@@ -470,7 +470,7 @@ def test_mcp_execute_search_parts_success(client, tmp_path): # Add tmp_path
     scan_response = client.post("/mcp/execute", json=scan_request_body)
     assert scan_response.status_code == 200
     time.sleep(1.0) # Wait for scan to complete
-    assert len(part_index) >= 2, "Index should have at least 2 parts after scan"
+    assert len(state.part_index) >= 2, f"Index should have at least 2 parts after scan for search, found {len(state.part_index)}"
     print("Pre-scan for search completed.")
 
     # 2. Search for a part
@@ -503,6 +503,7 @@ def test_mcp_execute_search_parts_success(client, tmp_path): # Add tmp_path
     print("POST /mcp/execute search_parts test passed.")
 
 def test_mcp_execute_search_parts_no_results(client, tmp_path): # Add tmp_path
+    state.part_index.clear() # Ensure index is empty before test
     """Test search_parts via API when no results are found."""
     workspace_path = str(tmp_path / "test_workspace")
     scan_request_id = f"test-scan-for-no-search-{uuid.uuid4()}"
@@ -553,8 +554,8 @@ def test_mcp_execute_launch_cq_editor_success(client):
     print("POST /mcp/execute launch_cq_editor (Success) test passed.")
 
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_export_invalid_index(mock_prepare_env, mock_run, client, tmp_path):
     """Test exporting a shape with an invalid shape_index via API within a workspace context."""
     # --- Setup: Simulate prior script execution ---
@@ -577,7 +578,8 @@ def test_mcp_execute_export_invalid_index(mock_prepare_env, mock_run, client, tm
     mock_run.return_value = mock_process_exec
 
     # Store the mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call export tool with invalid index ---
     export_request_id = f"test-export-bad-index-{uuid.uuid4()}"
@@ -635,7 +637,8 @@ def test_mcp_execute_get_shape_properties_success(mock_get_props, mock_import_br
     with open(intermediate_brep_path, "w") as f: f.write("dummy brep")
 
     # Store mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # Mock import and core logic function
     mock_shape = cq.Workplane().box(1,1,1)
@@ -669,8 +672,8 @@ def test_mcp_execute_get_shape_properties_success(mock_get_props, mock_import_br
     print("POST /mcp/execute get_shape_properties (Workspace) test passed.")
 
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_get_shape_properties_invalid_index(mock_prepare_env, mock_run, client, tmp_path):
     """Test get_shape_properties with invalid index within a workspace context."""
     # --- Setup: Simulate prior script execution ---
@@ -689,7 +692,8 @@ def test_mcp_execute_get_shape_properties_invalid_index(mock_prepare_env, mock_r
     mock_run.return_value = mock_process_exec
 
     # Store mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call get_shape_properties with invalid index ---
     props_request_id = f"test-get-props-bad-idx-{uuid.uuid4()}"
@@ -715,8 +719,8 @@ def test_mcp_execute_get_shape_properties_invalid_index(mock_prepare_env, mock_r
     print("POST /mcp/execute get_shape_properties with invalid index test passed.")
 
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_get_shape_properties_failed_build(mock_prepare_env, mock_run, client, tmp_path):
     """Test get_shape_properties for a failed build within a workspace context."""
     # --- Setup: Simulate prior FAILED script execution ---
@@ -737,7 +741,8 @@ def test_mcp_execute_get_shape_properties_failed_build(mock_prepare_env, mock_ru
     mock_run.return_value = mock_process_exec
 
     # Store the mocked failed result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call get_shape_properties with the failed result ID ---
     props_request_id = f"test-get-props-fail-build-{uuid.uuid4()}"
@@ -788,7 +793,8 @@ def test_mcp_execute_get_shape_description_success(mock_get_desc, mock_import_br
     with open(intermediate_brep_path, "w") as f: f.write("dummy brep")
 
     # Store mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # Mock import and core logic function
     mock_shape = cq.Workplane().box(1,1,1)
@@ -825,8 +831,8 @@ def test_mcp_execute_get_shape_description_success(mock_get_desc, mock_import_br
     print("POST /mcp/execute get_shape_description (Workspace) test passed.")
 
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_get_shape_description_invalid_index(mock_prepare_env, mock_run, client, tmp_path):
     """Test get_shape_description with invalid index within a workspace context."""
     # --- Setup: Simulate prior script execution ---
@@ -845,7 +851,8 @@ def test_mcp_execute_get_shape_description_invalid_index(mock_prepare_env, mock_
     mock_run.return_value = mock_process_exec
 
     # Store mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call get_shape_description with invalid index ---
     desc_request_id = f"test-get-desc-bad-idx-{uuid.uuid4()}"
@@ -871,8 +878,8 @@ def test_mcp_execute_get_shape_description_invalid_index(mock_prepare_env, mock_
     print("POST /mcp/execute get_shape_description with invalid index test passed.")
 
 
-@patch('server.subprocess.run')
-@patch('server.prepare_workspace_env')
+@patch('src.mcp_cadquery_server.handlers.subprocess.run')
+@patch('src.mcp_cadquery_server.handlers.prepare_workspace_env')
 def test_mcp_execute_get_shape_description_failed_build(mock_prepare_env, mock_run, client, tmp_path):
     """Test get_shape_description for a failed build within a workspace context."""
     # --- Setup: Simulate prior FAILED script execution ---
@@ -889,7 +896,8 @@ def test_mcp_execute_get_shape_description_failed_build(mock_prepare_env, mock_r
     mock_run.return_value = mock_process_exec
 
     # Store mocked result
-    server.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
+    # Store the mocked result in the server's state
+    state.shape_results[exec_result_id] = json.loads(mock_runner_output_exec)
 
     # --- Test: Call get_shape_description with the failed result ID ---
     desc_request_id = f"test-get-desc-fail-build-{uuid.uuid4()}"
@@ -1161,7 +1169,7 @@ def test_mcp_execute_get_shape_properties_nonexistent_result(client):
 
 
 
-def test_mcp_execute_get_shape_properties_failed_build(client):
+def test_mcp_execute_get_shape_properties_failed_build(mock_prepare_env, mock_run, client, tmp_path): # Add mocks and tmp_path
     """Test get_shape_properties for a result_id corresponding to a failed build."""
     # Create a failed build result
     script_fail = "import cadquery as cq\nresult = cq.Workplane('XY').box(1,1,0).edges('>Z').fillet(1)\nshow_object(result)" # Fillet radius too large
@@ -1215,7 +1223,7 @@ def test_mcp_execute_get_shape_description_nonexistent_result(client):
 
 # Test removed as it was duplicated by the refactored version above (around line 835)
 
-def test_mcp_execute_get_shape_description_failed_build(client):
+def test_mcp_execute_get_shape_description_failed_build(mock_prepare_env, mock_run, client, tmp_path): # Add mocks and tmp_path
     """Test get_shape_description for a result_id corresponding to a failed build."""
     # Re-use the failed build result creation from the properties test
     script_fail = "import cadquery as cq\nresult = cq.Workplane('XY').box(1,1,0).edges('>Z').fillet(1)" # Fillet radius too large
@@ -1434,7 +1442,7 @@ def test_mcp_execute_script_invalid_params_type(client):
 
 def test_mcp_execute_search_parts_before_scan(client): # Removed fixture dependency
     """Test search_parts API before scanning."""
-    part_index.clear() # Ensure index is empty
+    state.part_index.clear() # Ensure index is empty
     search_request_id = f"test-search-before-scan-{uuid.uuid4()}"
     search_term = "box"
     search_request_body = {"request_id": search_request_id, "tool_name": "search_parts", "arguments": {"query": search_term}}
@@ -1455,8 +1463,8 @@ def test_mcp_execute_search_parts_before_scan(client): # Removed fixture depende
 import pytest # Ensure pytest is imported
 
 # Remove skip marker, test is now reliable by checking queue.put directly
-@patch('server.asyncio.Queue') # Mock the Queue class itself to capture instance creation and put calls
-@patch('server.get_server_info') # Mock getting server info
+@patch('src.mcp_cadquery_server.web_server.asyncio.Queue') # Mock the Queue class where it's used
+@patch('src.mcp_cadquery_server.web_server.get_server_info') # Mock getting server info where it's used
 def test_sse_connection_sends_server_info(mock_get_server_info, MockQueue, client): # Use MockQueue
     """
     Test that connecting to the /mcp SSE endpoint attempts to put the server_info message
@@ -1487,6 +1495,9 @@ def test_sse_connection_sends_server_info(mock_get_server_info, MockQueue, clien
 
 
 # Remove patch for get_server_info as we'll compare with the real output
+# Import the function needed for the test
+from src.mcp_cadquery_server.mcp_api import get_server_info
+
 def test_stdio_mode_sends_server_info(): # Removed mock_get_server_info argument
     """
     Test that running the server in stdio mode prints server_info first.
@@ -1495,9 +1506,9 @@ def test_stdio_mode_sends_server_info(): # Removed mock_get_server_info argument
     # Get the expected output by calling the real function
     # Ensure necessary imports are available if get_server_info relies on them
     try:
-        expected_server_info = server.get_server_info()
+        expected_server_info = get_server_info() # Call imported function
     except Exception as e:
-        pytest.fail(f"Failed to call server.get_server_info() in test: {e}")
+        pytest.fail(f"Failed to call get_server_info() in test: {e}")
 
     # mock_get_server_info.return_value = expected_server_info # Removed mock
 
