@@ -9,7 +9,7 @@ REQUIREMENTS_FILE="$SCRIPT_DIR/requirements.txt"
 # Check if venv exists, create if not
 if [ ! -d "$VENV_DIR" ]; then
   echo "Virtual environment not found at $VENV_DIR. Creating..."
-  python3 -m venv "$VENV_DIR"
+  uv venv "$VENV_DIR"
   if [ $? -ne 0 ]; then
     echo "Error: Failed to create virtual environment."
     exit 1
@@ -26,7 +26,7 @@ if [ ! -d "$VENV_DIR" ]; then
 
   if [ -f "$REQUIREMENTS_FILE" ]; then
     echo "Installing dependencies from $REQUIREMENTS_FILE..."
-    pip install -r "$REQUIREMENTS_FILE"
+    uv pip install -r "$REQUIREMENTS_FILE"
     if [ $? -ne 0 ]; then
       echo "Error: Failed to install dependencies."
       # Consider exiting or just warning depending on desired behavior
